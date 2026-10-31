@@ -19,7 +19,7 @@ from .challenge_store import ChallengeStore, UserBinding, ordinary_directory
 from .grouped_extractor import memory_specs
 from .memory_factory import create_memory_service
 
-VERSION = "AMC-ENTRY-1.0"
+VERSION = "AMC-ENTRY-1.1"
 MAX_MESSAGES = 256
 MAX_MESSAGE_CHARS = 81920
 

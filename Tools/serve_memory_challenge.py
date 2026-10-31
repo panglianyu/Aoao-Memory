@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 from contextlib import asynccontextmanager
 import csv
 import io
@@ -19,8 +20,11 @@ from urllib.parse import urlsplit
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-ENTRY_VERSION = "AMC-ENTRY-1.0"
+ENTRY_VERSION = "AMC-ENTRY-1.1"
+_STORAGE_MARKER_VERSION = "AMC-ENTRY-1.0"
 _MARKER = ".amc-entry-v1"
+_LEASE_FILE = ".amc-entry.lock"
+_ACTIVE_OWNERS: set[_StartupOwner] = set()
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -49,11 +53,89 @@ def _validate_root(root: Path) -> Path:
         raise ValueError("independent competition directory required")
     if root.exists():
         marker = root / _MARKER
-        if not root.is_dir() or (any(root.iterdir()) and (
-                marker.is_symlink() or not marker.is_file()
-                or marker.read_text(encoding="ascii") != ENTRY_VERSION + "\n")):
+        if not root.is_dir():
+            raise ValueError("ordinary competition directory required")
+        entries = {entry.name for entry in root.iterdir()}
+        lease_only = entries == {_LEASE_FILE} and _ordinary_file(root / _LEASE_FILE)
+        if entries and not lease_only and (
+                not _ordinary_file(marker)
+                or marker.read_text(encoding="ascii") != _STORAGE_MARKER_VERSION + "\n"):
             raise ValueError("fresh or owned competition directory required")
     return root
+
+
+def _ordinary_file(path: Path) -> bool:
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return False
+    return (stat.S_ISREG(info.st_mode) and info.st_nlink == 1
+            and not getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT)
+
+
+class _DataRootLease:
+    """Hold one non-inheritable Windows file descriptor for this data root."""
+
+    def __init__(self, root: Path, descriptor: int):
+        self.root, self.descriptor = root, descriptor
+
+    @classmethod
+    def acquire(cls, root: Path) -> _DataRootLease:
+        if os.name != "nt":
+            raise OSError("Windows data-root lease required")
+        import msvcrt
+
+        root = _validate_root(root)
+        root.mkdir(parents=True, exist_ok=True)
+        root = _validate_root(root)
+        path = _private_path(root / _LEASE_FILE)
+        if path.exists() and not _ordinary_file(path):
+            raise ValueError("ordinary lease file required")
+        descriptor = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            os.set_inheritable(descriptor, False)
+            opened, named = os.fstat(descriptor), path.lstat()
+            if (not _ordinary_file(path) or opened.st_nlink != 1
+                    or (opened.st_dev, opened.st_ino) != (named.st_dev, named.st_ino)):
+                raise ValueError("stable ordinary lease file required")
+            os.lseek(descriptor, 0, os.SEEK_SET)
+            msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+        except BaseException:
+            os.close(descriptor)
+            raise
+        return cls(root, descriptor)
+
+    def close(self) -> None:
+        if self.descriptor is None:
+            return
+        import msvcrt
+
+        os.lseek(self.descriptor, 0, os.SEEK_SET)
+        msvcrt.locking(self.descriptor, msvcrt.LK_UNLCK, 1)
+        os.close(self.descriptor)
+        self.descriptor = None
+
+
+class _StartupOwner:
+    """Keep failed cleanup owners alive so their lease cannot be garbage-collected."""
+
+    def __init__(self, lease: _DataRootLease):
+        self.lease, self.runtime, self.client = lease, None, None
+        _ACTIVE_OWNERS.add(self)
+
+    def release_if_empty(self) -> None:
+        if self.runtime is None and self.client is None:
+            self.lease.close()
+            _ACTIVE_OWNERS.discard(self)
+
+    async def close(self) -> None:
+        if self.runtime is not None:
+            await self.runtime.close()
+            self.runtime = None
+        if self.client is not None:
+            await self.client.close()
+            self.client = None
+        self.release_if_empty()
 
 
 def _api_settings(path: Path) -> dict[str, str]:
@@ -118,11 +200,38 @@ def _token(path: Path, *, create: bool) -> str | None:
 
 
 def _prepare_root(root: Path) -> None:
-    root.mkdir(parents=True, exist_ok=True)
+    # Acquiring the lease creates a file, but does not accept foreign data as owned.
+    root = _validate_root(root)
     marker = root / _MARKER
     if not marker.exists():
         with marker.open("x", encoding="ascii", newline="\n") as stream:
-            stream.write(ENTRY_VERSION + "\n")
+            stream.write(_STORAGE_MARKER_VERSION + "\n")
+
+
+async def _serve(owner: _StartupOwner, args, api: dict[str, str], bearer: str) -> None:
+    try:
+        import uvicorn
+        from openai import AsyncOpenAI
+        from system_memory_god.challenge_api import create_app
+        from system_memory_god.challenge_runtime import ChallengeRuntime
+
+        owner.client = AsyncOpenAI(api_key=api["api_key"], base_url=api["base_url"], max_retries=0,
+                                   timeout=60.0)
+        owner.runtime = ChallengeRuntime(owner.lease.root, client=owner.client,
+                                         model=api["model_name"], add_timeout=args.add_timeout)
+        app = create_app(owner.runtime, token=bearer)
+
+        @asynccontextmanager
+        async def lifespan(application):
+            # The CLI owns shutdown even if the ASGI lifespan never starts.
+            yield
+
+        app.router.lifespan_context = lifespan
+        server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=args.port, workers=1,
+            access_log=False, log_level="warning", timeout_keep_alive=5))
+        await server.serve()
+    finally:
+        await owner.close()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -134,42 +243,26 @@ def main(argv: list[str] | None = None) -> int:
     if (not 1024 <= args.port <= 65535 or not math.isfinite(args.add_timeout)
             or not 0 < args.add_timeout <= 1700):
         raise ValueError("invalid server limits")
-    api = _api_settings(args.api_config)
     if args.check_config:
+        _api_settings(args.api_config)
         _token(credential_file, create=False)
-        print("AMC-ENTRY-1.0 configuration valid; no model or service started.")
+        print(f"{ENTRY_VERSION} configuration valid; no model or service started.")
         return 0
-    _prepare_root(root)
-    credential_file.parent.mkdir(parents=True, exist_ok=True)
-    bearer = _token(credential_file, create=True)
-    os.environ["HF_HUB_OFFLINE"] = "1"
-    os.environ["TRANSFORMERS_OFFLINE"] = "1"
-    for path in (PROJECT_ROOT, PROJECT_ROOT / "apps"):
-        sys.path.insert(0, str(path))
-
-    import uvicorn
-    from openai import AsyncOpenAI
-    from system_memory_god.challenge_api import create_app
-    from system_memory_god.challenge_runtime import ChallengeRuntime
-
-    client = AsyncOpenAI(api_key=api["api_key"], base_url=api["base_url"], max_retries=0,
-                         timeout=60.0)
-    runtime = ChallengeRuntime(root, client=client, model=api["model_name"],
-                               add_timeout=args.add_timeout)
-    app = create_app(runtime, token=bearer)
-    runtime_lifespan = app.router.lifespan_context
-
-    @asynccontextmanager
-    async def lifespan(application):
-        try:
-            async with runtime_lifespan(application):
-                yield
-        finally:
-            await client.close()
-
-    app.router.lifespan_context = lifespan
-    uvicorn.run(app, host="127.0.0.1", port=args.port, workers=1,
-                access_log=False, log_level="warning", timeout_keep_alive=5)
+    owner = _StartupOwner(_DataRootLease.acquire(root))
+    try:
+        _prepare_root(root)
+        api = _api_settings(args.api_config)
+        credential_file.parent.mkdir(parents=True, exist_ok=True)
+        bearer = _token(credential_file, create=True)
+        os.environ["HF_HUB_OFFLINE"] = "1"
+        os.environ["TRANSFORMERS_OFFLINE"] = "1"
+        for path in (PROJECT_ROOT, PROJECT_ROOT / "apps"):
+            sys.path.insert(0, str(path))
+        asyncio.run(_serve(owner, args, api, bearer))
+    finally:
+        # Before async resources exist this also handles configuration/import failure.
+        # Failed runtime/client closes retain both their owner and the same lease FD.
+        owner.release_if_empty()
     return 0
 
 

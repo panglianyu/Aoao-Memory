@@ -37,7 +37,7 @@ class FakeRuntime:
         return [{"id": "original-1", "content": "Ada lives in Oslo."}]
 
     def health(self):
-        return {"state": "ready", "version": "AMC-ENTRY-1.0", "secret": TOKEN}
+        return {"state": "ready", "version": "AMC-ENTRY-1.1", "secret": TOKEN}
 
     async def close(self):
         self.closed = True
@@ -70,7 +70,7 @@ def test_add_search_health_and_shutdown_follow_public_contract():
         assert response.status_code == 200
         assert response.json() == {"data": [{"id": "original-1", "content": "Ada lives in Oslo."}]}
         assert runtime.calls[-1] == ("search", {"user_id": "user-1", "query": query, "top_k": 100})
-        assert client.get("/health").json() == {"state": "ready", "version": "AMC-ENTRY-1.0"}
+        assert client.get("/health").json() == {"state": "ready", "version": "AMC-ENTRY-1.1"}
         assert client.get("/docs").status_code == 404
     assert runtime.closed
 
@@ -90,6 +90,32 @@ def test_invalid_add_is_rejected_without_echo_or_runtime_access(update):
         assert response.status_code == 422
         assert response.json() == {"detail": {"reason": "invalid_request"}}
         assert "secret input" not in response.text
+        assert runtime.calls == []
+
+
+@pytest.mark.parametrize("message", [
+    {"role": "user", "content": "timestamp contract"},
+    {"role": "user", "content": "timestamp contract", "timestamp": None},
+    {"role": "user", "content": "timestamp contract", "timestamp": 0},
+    {"role": "user", "content": "timestamp contract", "timestamp": 253402300799999},
+])
+def test_add_accepts_missing_null_or_integer_timestamp_without_conversion(message):
+    runtime = FakeRuntime()
+    with TestClient(create_app(runtime, token=TOKEN)) as client:
+        response = client.post("/add", headers=AUTH, json={**ADD, "messages": [message]})
+        assert response.status_code == 200
+        assert runtime.calls == [("add", {**ADD, "messages": [message]})]
+
+
+@pytest.mark.parametrize("timestamp", [0.0, 1.5, True, False, -1, 253402300800000])
+def test_invalid_timestamp_is_rejected_before_runtime(timestamp):
+    runtime = FakeRuntime()
+    message = {"role": "user", "content": "private timestamp input", "timestamp": timestamp}
+    with TestClient(create_app(runtime, token=TOKEN)) as client:
+        response = client.post("/add", headers=AUTH, json={**ADD, "messages": [message]})
+        assert response.status_code == 422
+        assert response.json() == {"detail": {"reason": "invalid_request"}}
+        assert "private timestamp input" not in response.text
         assert runtime.calls == []
 
 

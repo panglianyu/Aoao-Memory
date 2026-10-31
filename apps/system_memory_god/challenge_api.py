@@ -6,7 +6,6 @@ import asyncio
 from contextlib import asynccontextmanager
 import hmac
 import json
-import math
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -15,7 +14,7 @@ from kernel.daily_memory_contracts import MAX_MEMORY_QUERY_CHARS
 from kernel.raw_message_models import ConflictError
 
 
-ENTRY_VERSION = "AMC-ENTRY-1.0"
+ENTRY_VERSION = "AMC-ENTRY-1.1"
 MAX_BODY_BYTES = 2 * 1024 * 1024
 MAX_MESSAGE_CHARS = 81920
 MAX_MESSAGES = 256
@@ -109,8 +108,7 @@ def _add_values(value: dict) -> dict:
                 or not _text(message["content"], MAX_MESSAGE_CHARS)):
             raise ValueError("invalid message")
         stamp = message.get("timestamp")
-        if stamp is not None and (type(stamp) not in {int, float}
-                                  or not 0 <= stamp <= 253402300799999 or not math.isfinite(stamp)):
+        if stamp is not None and (type(stamp) is not int or not 0 <= stamp <= 253402300799999):
             raise ValueError("invalid timestamp")
     return value
 

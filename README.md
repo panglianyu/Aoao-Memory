@@ -4,7 +4,7 @@ A Windows Add/Search service for persistent original messages and derived memory
 
 ## Versions and scope
 
-AMC-ENTRY-1.0 matches the submitted API source. The codex/amc-entry-1.1 branch is an undeployed candidate with OS-lease and integer-timestamp fixes. SOURCE_MANIFEST.json identifies source files; VALIDATION.md records actual checks.
+The AMC-ENTRY-1.0 tag matches the submitted API source. This codex/amc-entry-1.1 branch is an undeployed candidate with OS-lease and integer-timestamp fixes. SOURCE_MANIFEST.json identifies its source files; VALIDATION.md records actual checks. The submitted online service remains AMC-ENTRY-1.0.
 
 Publishing source does not change this industrial entry's group or establish compliance with the open-source track's prescribed models.
 

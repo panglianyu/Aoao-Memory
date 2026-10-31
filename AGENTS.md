@@ -1,6 +1,6 @@
 # Aoao Memory
 
-Version: AMC-ENTRY-1.0 | Port: 8795 | Stack: Windows, Python 3.10, FastAPI, SQLite, Chroma, BGE-M3
+Version: AMC-ENTRY-1.1 candidate (not deployed) | Port: 8795 | Stack: Windows, Python 3.10, FastAPI, SQLite, Chroma, BGE-M3
 
 ## Purpose
 
@@ -12,7 +12,7 @@ Run from the repository root in Windows PowerShell:
 
 ~~~powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup.ps1 -Dev
-& .\.venv\Scripts\python.exe -m pytest tests/test_memory_challenge_api.py tests/test_memory_challenge_runtime.py tests/test_memory_challenge_query_limits.py -q
+& .\.venv\Scripts\python.exe -m pytest tests/test_memory_challenge_api.py tests/test_memory_challenge_runtime.py tests/test_memory_challenge_query_limits.py tests/test_memory_challenge_cli.py -q
 & .\.venv\Scripts\python.exe -m ruff check Tools/serve_memory_challenge.py apps/system_memory_god/challenge_api.py apps/system_memory_god/challenge_runtime.py apps/system_memory_god/challenge_store.py
 ~~~
 

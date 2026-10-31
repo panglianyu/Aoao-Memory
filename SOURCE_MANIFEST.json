@@ -1,17 +1,22 @@
 {
   "project": "Aoao Memory",
-  "entry_version": "AMC-ENTRY-1.0",
-  "role": "submitted-online-source",
+  "entry_version": "AMC-ENTRY-1.1",
+  "role": "reviewed-undeployed-candidate",
   "source_files": [
     {
+      "path": "Tools/serve_memory_challenge.py",
+      "bytes": 11050,
+      "sha256": "7CFBAFC5E6CAC6DBF87CB6013C580BA5AB0543640A36B53FD0A05E58C471E88D"
+    },
+    {
       "path": "apps/system_memory_god/challenge_api.py",
-      "bytes": 8718,
-      "sha256": "64BC3453AA20E2701CA70F455EB6CD62D30129A1086472AA684DB60BD0E82A09"
+      "bytes": 8635,
+      "sha256": "B785AE2CC769A23DA8D051D3193EF725317735967A287F76426759F4738237F8"
     },
     {
       "path": "apps/system_memory_god/challenge_runtime.py",
       "bytes": 12866,
-      "sha256": "155AE85D498386303946F97E5ADAA457083AB66287F2D32EACE33C485F7D9758"
+      "sha256": "FB049B304BFC5B8F6C7C54619816017AAC6F63248E1A0B81C8BA9392D28FD021"
     },
     {
       "path": "apps/system_memory_god/challenge_store.py",
@@ -260,8 +265,13 @@
     },
     {
       "path": "tests/test_memory_challenge_api.py",
-      "bytes": 6747,
-      "sha256": "31EA8B4AF20550C35E722385595D40A448DB18A7B3DD8B0C61BF577AFD499831"
+      "bytes": 8103,
+      "sha256": "7E001FA0939525C99B4A14255FDCAEBD68ED61FFE738E5909C0C26368CD60546"
+    },
+    {
+      "path": "tests/test_memory_challenge_cli.py",
+      "bytes": 6941,
+      "sha256": "6E9210BD86AC23D0162729310CD324D821AE061D0F4DE619901B2ABE1005B7E7"
     },
     {
       "path": "tests/test_memory_challenge_query_limits.py",
@@ -272,11 +282,6 @@
       "path": "tests/test_memory_challenge_runtime.py",
       "bytes": 8754,
       "sha256": "B1A4A70849D72346E4A52D0E8014B27D689AAB89A1600EFD2DA1E9B376A664FD"
-    },
-    {
-      "path": "Tools/serve_memory_challenge.py",
-      "bytes": 7403,
-      "sha256": "3F73E933C08FCBC7F168BC1D1E3D2D8C9917F86F5A2DF2F4353757871F495683"
     }
   ],
   "external_model": {
