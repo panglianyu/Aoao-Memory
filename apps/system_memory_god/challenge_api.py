@@ -6,6 +6,7 @@ import asyncio
 from contextlib import asynccontextmanager
 import hmac
 import json
+import time
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -14,7 +15,7 @@ from kernel.daily_memory_contracts import MAX_MEMORY_QUERY_CHARS
 from kernel.raw_message_models import ConflictError
 
 
-ENTRY_VERSION = "AMC-ENTRY-1.1"
+ENTRY_VERSION = "AMC-ENTRY-1.2"
 MAX_BODY_BYTES = 2 * 1024 * 1024
 MAX_MESSAGE_CHARS = 81920
 MAX_MESSAGES = 256
@@ -121,7 +122,7 @@ def _search_values(value: dict) -> dict:
     if "options" in value and (type(value["options"]) is not list or len(value["options"]) > 256
                                or any(not _text(item, 32768) for item in value["options"])):
         raise ValueError("invalid options")
-    return {key: value[key] for key in ("user_id", "query", "top_k")}
+    return {key: value[key] for key in ("user_id", "query", "top_k", "options") if key in value}
 
 
 def _add_response(result: object, values: dict) -> dict:
@@ -173,26 +174,27 @@ def create_app(runtime, *, token: str) -> FastAPI:
     async def invoke(request: Request, operation: str) -> JSONResponse:
         if not authorized(request):
             return _error(401, "unauthorized")
-        if admission.locked():
+        if admission.locked() or runtime.busy:
             return _error(429, "busy")
         async with admission:
             try:
+                deadline = runtime.request_deadline()
                 try:
-                    body = await asyncio.wait_for(_body(request), timeout=30)
-                except TimeoutError:
+                    body = await asyncio.wait_for(_body(request), timeout=min(30, deadline - time.monotonic()))
+                except (TimeoutError, asyncio.TimeoutError):
                     return _error(408, "body_timeout")
                 if operation == "add":
                     values = _add_values(body)
-                    result = _add_response(await runtime.add(**values), values)
+                    result = _add_response(await runtime.add(**values, deadline=deadline), values)
                 else:
                     values = _search_values(body)
-                    result = _search_response(await runtime.search(**values), values["top_k"])
+                    result = _search_response(await runtime.search(**values, deadline=deadline), values["top_k"])
                 return JSONResponse(result)
             except _RequestError as error:
                 return _error(error.status, error.reason)
             except ConflictError:
                 return _error(409, "request_conflict")
-            except TimeoutError:
+            except (TimeoutError, asyncio.TimeoutError):
                 return _error(504, "publication_deadline")
             except ValueError:
                 return _error(422, "invalid_request")

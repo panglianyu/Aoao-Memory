@@ -1,6 +1,6 @@
 # Aoao Memory
 
-Version: AMC-ENTRY-1.1 candidate (not deployed) | Port: 8795 | Stack: Windows, Python 3.10, FastAPI, SQLite, Chroma, BGE-M3
+Version: AMC-ENTRY-1.2 candidate (not deployed) | Port: 8795 | Stack: Windows, Python 3.10, FastAPI, SQLite, Chroma, BGE-M3
 
 ## Purpose
 
@@ -12,11 +12,11 @@ Run from the repository root in Windows PowerShell:
 
 ~~~powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup.ps1 -Dev
-& .\.venv\Scripts\python.exe -m pytest tests/test_memory_challenge_api.py tests/test_memory_challenge_runtime.py tests/test_memory_challenge_query_limits.py tests/test_memory_challenge_cli.py -q
+& .\.venv\Scripts\python.exe -m pytest tests/test_memory_challenge_api.py tests/test_memory_challenge_runtime.py tests/test_memory_challenge_query_limits.py tests/test_memory_challenge_cli.py tests/test_memory_challenge_hints.py tests/test_memory_token_chunking.py -q
 & .\.venv\Scripts\python.exe -m ruff check Tools/serve_memory_challenge.py apps/system_memory_god/challenge_api.py apps/system_memory_god/challenge_runtime.py apps/system_memory_god/challenge_store.py
 ~~~
 
-README.md has the explicit model-cache preparation, private provider configuration, and launch commands. Do not run a model or paid-provider test as part of ordinary unit tests. Never reuse a private or production data root for tests.
+README.md has the explicit model-cache preparation, private provider configuration, and launch commands. The token-chunking test uses the pre-provisioned local fast tokenizer; it does not load weights or download files. Do not run embedding inference or paid-provider tests as part of ordinary unit tests. Never reuse a private or production data root for tests.
 
 ## Layout
 
@@ -43,7 +43,7 @@ Add validates, ingests idempotently, and waits for current publication. Search r
 - CLI model loading is offline. Pre-provision BGE in the same HF_HOME first.
 - One admitted request and one active user runtime; changing users closes the old owner.
 - The optional formal embedding/vendor audit mode is not configured by this package.
-- Preserve fixed source/version identity. The 1.1 branch is a separate undeployed candidate.
+- Preserve fixed source/version identity. This 1.2 branch is a separate undeployed candidate.
 - See VALIDATION.md for actual checks; do not turn unit tests into Full or quality claims.
 
 ## Changes

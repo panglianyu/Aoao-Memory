@@ -19,7 +19,7 @@ from kernel.daily_memory_contracts import (
     DailyRecallOutcome, RecallStatus, RecallPurpose, recall_deadline,
     INTERACTIVE_RECALL_TIMEOUT,
 )
-from kernel.daily_memory_contracts import validate_memory_query_options, MEMORY_DOMAINS
+from kernel.daily_memory_contracts import validate_memory_query_options, validate_retrieval_hints, MEMORY_DOMAINS
 from system_memory_god.storage.scoped_stores import ScopedStores
 
 from .daily_read_worker import MAX_READ_FRAME, MAX_READ_RESULT, READ_PROTOCOL_VERSION, serve
@@ -529,8 +529,10 @@ class SupervisedDailyRetrieval:
                                   end_ts: float | None = None,
                                   memory_scope: str = "auto",
                                   deadline: float | None = None,
-                                  purpose: RecallPurpose = "warm", query_options=None) -> DailyRecallOutcome:
+                                  purpose: RecallPurpose = "warm", query_options=None,
+                                  retrieval_hints: tuple[str, ...] = ()) -> DailyRecallOutcome:
         query_options = validate_memory_query_options(query_options)
+        retrieval_hints = validate_retrieval_hints(retrieval_hints)
         if (type(scope) is not Scope or scope.connector_id is None
                 or scope.conversation_id is None):
             raise ValueError("complete read scope required")
@@ -571,6 +573,8 @@ class SupervisedDailyRetrieval:
                    "deadline": deadline}
         if query_options is not None:
             request["query_options"] = query_options
+        if retrieval_hints:
+            request["retrieval_hints"] = retrieval_hints
         if not self.raw_only:
             request["op"] = "collect"
         cancel_event = _ReadControl()

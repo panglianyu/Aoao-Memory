@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
@@ -10,7 +11,7 @@ import math
 from pathlib import Path
 import time
 
-from kernel.daily_memory_contracts import MAX_MEMORY_QUERY_CHARS
+from kernel.daily_memory_contracts import MAX_MEMORY_QUERY_CHARS, memory_retrieval_hints
 from kernel.memory_pipeline_models import identity
 from kernel.raw_message_models import MessageDraft
 from kernel.raw_message_profile import ConnectorBinding, ConversationBinding, RawMessageProfile
@@ -19,7 +20,7 @@ from .challenge_store import ChallengeStore, UserBinding, ordinary_directory
 from .grouped_extractor import memory_specs
 from .memory_factory import create_memory_service
 
-VERSION = "AMC-ENTRY-1.1"
+VERSION = "AMC-ENTRY-1.2"
 MAX_MESSAGES = 256
 MAX_MESSAGE_CHARS = 81920
 
@@ -90,6 +91,21 @@ class ChallengeRuntime:
         if self._blocked or self._closing or self._closed:
             raise RuntimeError("challenge runtime unavailable")
 
+    @property
+    def busy(self) -> bool:
+        """Include owners still settling after their HTTP waiter has left."""
+        return bool(self._tasks) or self._closing
+
+    def request_deadline(self, deadline: float | None = None) -> float:
+        """Share one request budget with HTTP body reading and direct callers."""
+        limit = time.monotonic() + self._timeout
+        if deadline is not None:
+            if type(deadline) not in {int, float} or not math.isfinite(deadline):
+                raise ValueError("invalid challenge deadline")
+            limit = min(limit, deadline)
+        self._remaining(limit)
+        return limit
+
     @staticmethod
     def _remaining(deadline: float) -> float:
         remaining = deadline - time.monotonic()
@@ -112,13 +128,33 @@ class ChallengeRuntime:
             raise asyncio.CancelledError
         return result
 
-    async def _owned(self, operation):
+    async def _owned(self, operation, deadline: float):
         task = asyncio.create_task(operation)
         self._tasks.add(task)
+
+        def settled(done: asyncio.Task) -> None:
+            self._tasks.discard(done)
+            try:
+                done.exception()
+            except asyncio.CancelledError:
+                self._blocked = True
+
+        task.add_done_callback(settled)
         try:
-            return await self._settle(task)
+            result = await asyncio.wait_for(asyncio.shield(task), timeout=self._remaining(deadline))
+        except asyncio.TimeoutError:
+            raise TimeoutError("challenge request deadline exceeded") from None
+        self._remaining(deadline)
+        return result
+
+    @asynccontextmanager
+    async def _request_lease(self, deadline: float):
+        await asyncio.wait_for(self._lease.acquire(), timeout=self._remaining(deadline))
+        try:
+            self._remaining(deadline)
+            yield
         finally:
-            self._tasks.discard(task)
+            self._lease.release()
 
     def _profile(self, binding: UserBinding) -> RawMessageProfile:
         root = self.root / "users" / binding.key
@@ -134,8 +170,33 @@ class ChallengeRuntime:
             derivation_input_chars=MAX_MESSAGE_CHARS)
 
     async def _ensure_service(self, binding: UserBinding, deadline: float):
+        self._remaining(deadline)
         if self._binding == binding and self._service is not None:
             return self._service
+        await self._retire_service()
+        self._remaining(deadline)
+        try:
+            profile = await asyncio.to_thread(self._profile, binding)
+            self._remaining(deadline)
+            service = await asyncio.to_thread(self._factory, profile, mode="memory-full-v1",
+                embedding="bge-m3", semantic_mode="snapshot", client=self.client, model=self.model)
+            self._service, self._binding = service, binding
+            self._remaining(deadline)
+            await service.raw.initialize_profile()
+            self._remaining(deadline)
+            await service.start()
+            self._remaining(deadline)
+        except TimeoutError:
+            # A late constructor/start still belongs to this owner. Retire it
+            # before releasing the lease; never lose it when the waiter leaves.
+            await self._retire_service()
+            raise
+        except BaseException:
+            self._blocked = True
+            raise RuntimeError("challenge owner startup failed") from None
+        return service
+
+    async def _retire_service(self) -> None:
         if self._service is not None:
             try:
                 await self._service.close()
@@ -144,25 +205,10 @@ class ChallengeRuntime:
                 raise RuntimeError("challenge owner close failed") from None
             self._service = None
             self._binding = None
-        self._remaining(deadline)
-        try:
-            profile = await asyncio.to_thread(self._profile, binding)
-            service = await asyncio.to_thread(self._factory, profile, mode="memory-full-v1",
-                embedding="bge-m3", semantic_mode="snapshot", client=self.client, model=self.model)
-            self._service, self._binding = service, binding
-            self._remaining(deadline)
-            await service.raw.initialize_profile()
-            self._remaining(deadline)
-            await asyncio.wait_for(service.start(), timeout=self._remaining(deadline))
-        except BaseException:
-            self._blocked = True
-            raise RuntimeError("challenge owner startup failed") from None
-        return service
 
     async def _published(self, service, deadline: float) -> None:
         self._remaining(deadline)
-        state = await asyncio.wait_for(service.wait_until_published(
-            service.scopes[0], deadline=deadline), timeout=self._remaining(deadline))
+        state = await service.wait_until_published(service.scopes[0], deadline=deadline)
         if type(state) is not dict or state.get("status") != "current":
             self._remaining(deadline)
             if type(state) is dict and state.get("reason") == "publication_deadline":
@@ -171,7 +217,8 @@ class ChallengeRuntime:
         self._remaining(deadline)
 
     async def add(self, *, user_id: str, session_id: str, request_id: str,
-                  messages: list[dict]) -> dict:
+                  messages: list[dict], deadline: float | None = None) -> dict:
+        deadline = self.request_deadline(deadline)
         user_id, session_id, request_id = map(_external_id, (user_id, session_id, request_id))
         messages = _messages(messages)
         body = json.dumps({"user_id": user_id, "session_id": session_id,
@@ -182,10 +229,10 @@ class ChallengeRuntime:
         digest = hashlib.sha256(body).hexdigest()
         self._available()
         return await self._owned(self._add(user_id, session_id, request_id, messages, digest,
-                                           time.monotonic() + self._timeout))
+                                           deadline), deadline)
 
     async def _add(self, user_id, session_id, request_id, messages, digest, deadline):
-        async with self._lease:
+        async with self._request_lease(deadline):
             self._available()
             self._remaining(deadline)
             binding, request = await self._store.begin(user_id, request_id, digest, len(messages))
@@ -198,16 +245,21 @@ class ChallengeRuntime:
                     (datetime(1970, 1, 1, tzinfo=timezone.utc)
                      + timedelta(milliseconds=row["timestamp"])).isoformat())
                 message_id = stable_id("amc-message-v1", user_id, request_id, str(index))
-                await asyncio.wait_for(service.add(scope, MessageDraft(message_id, scope.conversation_id,
+                await service.add(scope, MessageDraft(message_id, scope.conversation_id,
                     session_id, row["role"], row["content"], "text", created_at, "web",
-                    scope.user_id, idempotency_key=message_id)), timeout=self._remaining(deadline))
+                    scope.user_id, idempotency_key=message_id))
+                self._remaining(deadline)
                 await self._store.checkpoint(binding, request_id, index + 1)
+                self._remaining(deadline)
             await self._published(service, deadline)
             await self._store.complete(binding, request_id)
+            self._remaining(deadline)
             return {"success": True, "request_id": request_id,
                     "user_id": user_id, "session_id": session_id}
 
-    async def search(self, *, user_id: str, query: str, top_k: int) -> list[dict]:
+    async def search(self, *, user_id: str, query: str, top_k: int,
+                     options=(), deadline: float | None = None) -> list[dict]:
+        deadline = self.request_deadline(deadline)
         user_id = _external_id(user_id)
         if (type(query) is not str or not query.strip() or len(query) > MAX_MEMORY_QUERY_CHARS
                 or type(top_k) is not int or not 1 <= top_k <= 100):
@@ -216,21 +268,26 @@ class ChallengeRuntime:
             query.encode("utf-8")
         except UnicodeError:
             raise ValueError("invalid challenge search") from None
+        hints = memory_retrieval_hints(options)
         self._available()
         return await self._owned(self._search(user_id, query, top_k,
-                                               time.monotonic() + self._timeout))
+                                               deadline, hints), deadline)
 
-    async def _search(self, user_id, query, top_k, deadline):
-        async with self._lease:
+    async def _search(self, user_id, query, top_k, deadline, hints=()):
+        async with self._request_lease(deadline):
             self._available()
             self._remaining(deadline)
             binding = await self._store.lookup(user_id)
+            self._remaining(deadline)
             if binding is None:
                 return []
             service = await self._ensure_service(binding, deadline)
             await self._published(service, deadline)
+            query_options = {"retrieval_hints": hints} if hints else {}
             outcome = await service.search(service.scopes[0], query, top_k=top_k,
-                neighbors=0, purpose="interactive", deadline=min(deadline, time.monotonic() + 2))
+                neighbors=0, purpose="interactive", deadline=min(deadline, time.monotonic() + 2),
+                **query_options)
+            self._remaining(deadline)
             if (outcome.status not in {"ready", "degraded"} or type(outcome.items) is not list
                     or outcome.status == "degraded" and not outcome.items):
                 raise RuntimeError("challenge retrieval unavailable")
@@ -264,12 +321,5 @@ class ChallengeRuntime:
         if self._tasks:
             await asyncio.gather(*tuple(self._tasks), return_exceptions=True)
         async with self._lease:
-            if self._service is not None:
-                try:
-                    await self._service.close()
-                except BaseException:
-                    self._blocked = True
-                    raise RuntimeError("challenge owner close failed") from None
-                self._service = None
-                self._binding = None
+            await self._retire_service()
             self._closed = True

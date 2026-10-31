@@ -32,7 +32,7 @@ from kernel.raw_message_models import (
     StoredMessage,
 )
 from kernel.memory_pipeline_models import PipelineScope, SourceRevision, identity
-from kernel.daily_memory_contracts import MAX_MEMORY_QUERY_CHARS
+from kernel.daily_memory_contracts import MAX_MEMORY_QUERY_CHARS, validate_retrieval_hints
 
 from kernel.raw_message_schema import SCHEMA_VERSION
 from kernel.feishu_business_text import extract_feishu_business_text
@@ -82,12 +82,17 @@ _SEARCH_SECONDS_LIMIT = 3.0
 _SEARCH_PROGRESS_INTERVAL = 1000
 
 
-def raw_evidence(message: StoredMessage, query: str = "") -> RawMessageEvidence:
+def raw_evidence(message: StoredMessage, query: str | tuple[str, ...] = "") -> RawMessageEvidence:
     """Verify the entire original before extracting an unchanged, located slice."""
     encoded = message.content.encode("utf-8")
     if hashlib.sha256(encoded).hexdigest() != message.content_hash:
         raise RawMessageError("original integrity conflict")
     fold = bytes.maketrans(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ", b"abcdefghijklmnopqrstuvwxyz")
+    if isinstance(query, tuple):
+        # The first member is the unchanged original query. Other members are
+        # separately validated hints, never a replacement for stored evidence.
+        query = next((part for part in query if part and
+                      encoded.translate(fold).find(part.encode("utf-8").translate(fold)) >= 0), "")
     byte_position = encoded.translate(fold).find(query.encode("utf-8").translate(fold)) if query else 0
     # ASCII bytes cannot occur inside a UTF-8 multibyte sequence. Preserve the
     # existing ASCII-only match rule and convert back to original character IDs.
@@ -102,6 +107,47 @@ def raw_evidence(message: StoredMessage, query: str = "") -> RawMessageEvidence:
         message.revision, message.content_hash, start != 0 or end != len(message.content),
         start, end, len(message.content), len(encoded),
     )
+
+
+def query_raw_hint_candidates(db: sqlite3.Connection, scope: Scope, hints: tuple[str, ...], *,
+                              evidence_query: tuple[str, ...], start_ts=None, end_ts=None,
+                              deadline: float) -> list[RawMessageEvidence]:
+    """One bounded scoped OR query; no FTS expression comes from an option."""
+    hints = validate_retrieval_hints(hints)
+    validate_raw_search(scope, "hints", limit=50, start_ts=start_ts, end_ts=end_ts,
+                        before=None, deadline=deadline)
+    if not hints:
+        return []
+    steps = 0
+
+    def budget() -> int:
+        nonlocal steps
+        steps += _SEARCH_PROGRESS_INTERVAL
+        return int(steps > _SEARCH_VM_LIMIT or time.monotonic() >= deadline)
+
+    db.set_progress_handler(budget, _SEARCH_PROGRESS_INTERVAL)
+    try:
+        predicate = " OR ".join("instr(lower(content),?)>0" for _ in hints)
+        rows = db.execute("SELECT * FROM raw_messages WHERE agent_id=? AND user_id=? "
+            "AND connector_id=? AND conversation_id=? AND status IN ('active','edited') "
+            "AND (" + predicate + ") ORDER BY ordinal DESC,session_id DESC,message_id DESC LIMIT 50",
+            (scope.agent_id, scope.user_id, scope.connector_id, scope.conversation_id, *hints)).fetchall()
+        result = []
+        size = 0
+        for row in rows:
+            if time.monotonic() >= deadline:
+                raise TimeoutError("hint query deadline exceeded")
+            stamp = datetime.fromisoformat(row["created_at"]).timestamp()
+            if (start_ts is not None and stamp < start_ts or end_ts is not None and stamp >= end_ts):
+                continue
+            evidence = raw_evidence(_message(row), evidence_query)
+            size += len(json.dumps(asdict(evidence), ensure_ascii=False).encode())
+            if size > _MAX_SEARCH_RETURN_BYTES:
+                break
+            result.append(evidence)
+        return result
+    finally:
+        db.set_progress_handler(None, 0)
 
 
 def query_raw_content_chunk(db: sqlite3.Connection, scope: Scope, message_id: str, *,
@@ -243,7 +289,7 @@ def query_raw_published_snapshots(
     db: sqlite3.Connection, scope: Scope, message_ids: tuple[str, ...], *,
     proofs: dict[str, tuple[tuple[str, str], ...]] | None = None,
     deadline: float | None = None,
-    evidence_query: str | None = None,
+    evidence_query: str | tuple[str, ...] | None = None,
 ) -> dict[str, tuple[StoredMessage | RawMessageEvidence, tuple[dict, ...]]]:
     """Publication authority: current Raw and committed task proofs, one snapshot.
 
@@ -425,7 +471,7 @@ def query_raw_search_page(db: sqlite3.Connection, scope: Scope, needle: str, *,
                           end_ts: float | None,
                           before: tuple[int, str, str] | None,
                           deadline: float | None,
-                          evidence_query: str | None = None
+                          evidence_query: str | tuple[str, ...] | None = None
                           ) -> list[StoredMessage] | list[RawMessageEvidence]:
     """Bounded scoped SQL shared by the writer's reader and existing-file view."""
     page_deadline = time.monotonic() + _SEARCH_SECONDS_LIMIT

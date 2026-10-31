@@ -23,6 +23,7 @@ from kernel.raw_message_store import _PurgeProof
 from kernel.daily_memory_contracts import DailyRecallOutcome, RecallStatus, RecallPurpose, recall_deadline
 from kernel.daily_memory_contracts import (
     MEMORY_DOMAINS, MAX_MEMORY_QUERY_CHARS, validate_memory_query_options, memory_query_terms,
+    validate_retrieval_hints,
 )
 from contextvars import ContextVar
 
@@ -184,7 +185,8 @@ class RawMessageRetrieval:
 
     def __init__(self, raw, stores, vector_index=None, *,
                  request_timeout_seconds: float = 30.0, collect_only: bool = False,
-                 candidate_byte_budget: int = _EVIDENCE_BYTES, query_options=None):
+                 candidate_byte_budget: int = _EVIDENCE_BYTES, query_options=None,
+                 retrieval_hints: tuple[str, ...] = ()):
         if (type(request_timeout_seconds) not in {int, float}
                 or not math.isfinite(request_timeout_seconds)
                 or not 0 < request_timeout_seconds <= 300):
@@ -200,6 +202,7 @@ class RawMessageRetrieval:
             raise ValueError("invalid evidence byte budget")
         self._candidate_byte_budget = candidate_byte_budget
         self.query_options = validate_memory_query_options(query_options)
+        self.retrieval_hints = validate_retrieval_hints(retrieval_hints)
 
     def _begin_trace(self):
         value = None
@@ -270,6 +273,94 @@ class RawMessageRetrieval:
             if offset < len(derived):
                 merged.append(derived[offset])
         return merged
+
+    @staticmethod
+    def _hint_fusion(primary: list[dict], auxiliary: list[dict]) -> list[dict]:
+        """Source-level 2:1 RRF, retaining distinct anchored domain records."""
+        fingerprints: dict[str, tuple] = {}
+        merged: dict[tuple, dict] = {}
+        auxiliary_ranks: dict[str, int] = {}
+        for item in auxiliary:
+            source_id = item["source_message_id"]
+            auxiliary_ranks.setdefault(source_id, len(auxiliary_ranks) + 1)
+        for is_auxiliary, rows in ((False, primary), (True, auxiliary)):
+            for item in rows:
+                source_id = item["source_message_id"]
+                fingerprint = (item["revision"], item["source_time"],
+                    item.get("source_content_hash") or hashlib.sha256(item["source_content"].encode()).hexdigest())
+                if source_id in fingerprints and fingerprints[source_id] != fingerprint:
+                    raise RawMessageError("candidate original conflict")
+                fingerprints[source_id] = fingerprint
+                value = dict(item)
+                if is_auxiliary:
+                    value["_hint_auxiliary_rank"] = auxiliary_ranks[source_id]
+                elif "_hint_auxiliary_rank" not in value or "_hint_primary_score" in value:
+                    value.setdefault("_hint_primary_score", value.get("_rank_score", .5))
+                key = (value["domain"], value.get("memory_id", value.get("message_id")), source_id)
+                previous = merged.get(key)
+                if previous is not None:
+                    for field in ("_hint_auxiliary_rank", "_hint_primary_score"):
+                        if field in value:
+                            previous[field] = value[field]
+                else:
+                    merged[key] = value
+        values = list(merged.values())
+        ranked_primary = sorted((item for item in values if "_hint_primary_score" in item),
+            key=lambda item: (item["_hint_primary_score"], item["source_time"],
+                              item["source_message_id"]), reverse=True)
+        primary_ranks: dict[str, int] = {}
+        for item in ranked_primary:
+            primary_ranks.setdefault(item["source_message_id"], len(primary_ranks) + 1)
+        for item in values:
+            rank = item.get("_hint_auxiliary_rank")
+            if rank is not None:
+                if type(rank) is not int or not 1 <= rank <= 100:
+                    raise RawMessageError("invalid hint rank")
+                source_id = item["source_message_id"]
+                auxiliary_ranks[source_id] = min(auxiliary_ranks.get(source_id, rank), rank)
+        for item in values:
+            source_id = item["source_message_id"]
+            primary_rank, auxiliary_rank = primary_ranks.get(source_id), auxiliary_ranks.get(source_id)
+            score = ((2 / (60 + primary_rank) if primary_rank else 0)
+                     + (1 / (60 + auxiliary_rank) if auxiliary_rank else 0))
+            # Affine scaling preserves RRF ordering and the existing .49 cap on
+            # historical facts. It does not add answer correctness evidence.
+            item["_rank_score"] = .5 + 10 * score
+        return values
+
+    async def collect_hint_candidates(self, scope: Scope, primary: list[dict], *,
+                                      start_ts, end_ts, deadline: float,
+                                      reasons: list[str], memory_scope: str = "auto") -> list[dict]:
+        """At most one optional lexical query, with no vector/model request."""
+        auxiliary_deadline = min(deadline - .05, time.monotonic() + .15)
+        kinds = _SCOPE_DOMAINS.get(memory_scope.strip().lower() or "auto", frozenset())
+        if self.query_options is not None:
+            kinds = kinds.intersection(self.query_options["enabled"])
+        if not self.retrieval_hints or "raw" not in kinds or auxiliary_deadline <= time.monotonic():
+            return primary
+        try:
+            messages = await asyncio.to_thread(self.raw.hint_search, scope, self.retrieval_hints,
+                start_ts=start_ts, end_ts=end_ts, deadline=auxiliary_deadline)
+        except RawMessageError:
+            # Integrity conflicts must reach the normal fail-closed publication path.
+            raise
+        except Exception:
+            return primary
+        if time.monotonic() >= auxiliary_deadline:
+            return primary
+        auxiliary = []
+        for message in messages:
+            if not _integrity_valid(message):
+                raise RawMessageError("original integrity conflict")
+            item = {"domain": "raw", "message_id": message.message_id,
+                "content": message.content, "source_message_id": message.message_id,
+                "source_content": message.content, "source_time": message.created_at,
+                "revision": message.revision, **_excerpt_metadata(message),
+                **_excerpt_metadata(message, prefix="source_"), "neighbors": []}
+            if self.query_options is not None:
+                item.update(source_role=message.role, session_id=message.session_id, ordinal=message.ordinal)
+            auxiliary.append(item)
+        return self._bounded_candidates(self._hint_fusion(primary, auxiliary), reasons, deadline)
 
     async def _source_snapshots(
         self, scope: Scope, message_ids: tuple[str, ...], deadline: float | None,
@@ -421,6 +512,8 @@ class RawMessageRetrieval:
             if self.collect_only:
                 # Internal IPC candidates carry no publication authority.
                 return self._bounded_candidates(candidates, reasons, deadline)
+            if self.retrieval_hints:
+                candidates = self._hint_fusion(candidates, [])
             identities: dict[str, tuple] = {}
             for item in candidates:
                 copies = [(item["source_message_id"], item["revision"], item["source_time"],
@@ -521,7 +614,8 @@ class RawMessageRetrieval:
                                                         end_ts, deadline,
                                                         snapshots=final_snapshot)
                 if checked is not None:
-                    row = {key: value for key, value in checked.items() if key != "_rank_score"}
+                    row = {key: value for key, value in checked.items()
+                           if key != "_rank_score" and not key.startswith("_hint_")}
                     if evidence_mode and len(json.dumps([*selected, row], ensure_ascii=False,
                                 separators=(",", ":"), allow_nan=False).encode()) > self._candidate_byte_budget:
                         if reasons is not None:

@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import time
 
 import httpx
 import pytest
@@ -22,8 +23,17 @@ class FakeRuntime:
         self.calls = []
         self.error = None
         self.closed = False
+        self.busy = False
+        self.timeout = 2
+        self.deadline = None
+        self.received_deadlines = []
+
+    def request_deadline(self):
+        self.deadline = time.monotonic() + self.timeout
+        return self.deadline
 
     async def add(self, **values):
+        self.received_deadlines.append(values.pop("deadline"))
         self.calls.append(("add", values))
         if self.error is not None:
             raise self.error
@@ -31,13 +41,14 @@ class FakeRuntime:
                                    ("request_id", "user_id", "session_id")}}
 
     async def search(self, **values):
+        self.received_deadlines.append(values.pop("deadline"))
         self.calls.append(("search", values))
         if self.error is not None:
             raise self.error
         return [{"id": "original-1", "content": "Ada lives in Oslo."}]
 
     def health(self):
-        return {"state": "ready", "version": "AMC-ENTRY-1.1", "secret": TOKEN}
+        return {"state": "ready", "version": "AMC-ENTRY-1.2", "secret": TOKEN}
 
     async def close(self):
         self.closed = True
@@ -69,8 +80,9 @@ def test_add_search_health_and_shutdown_follow_public_contract():
             "user_id": "user-1", "query": query, "top_k": 100, "options": ["A", "B"]})
         assert response.status_code == 200
         assert response.json() == {"data": [{"id": "original-1", "content": "Ada lives in Oslo."}]}
-        assert runtime.calls[-1] == ("search", {"user_id": "user-1", "query": query, "top_k": 100})
-        assert client.get("/health").json() == {"state": "ready", "version": "AMC-ENTRY-1.1"}
+        assert runtime.calls[-1] == ("search", {"user_id": "user-1", "query": query,
+                                               "top_k": 100, "options": ["A", "B"]})
+        assert client.get("/health").json() == {"state": "ready", "version": "AMC-ENTRY-1.2"}
         assert client.get("/docs").status_code == 404
     assert runtime.closed
 
@@ -185,3 +197,53 @@ async def test_second_memory_request_is_rejected_instead_of_queued():
         finally:
             finish.set()
             assert (await first).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_body_reading_and_runtime_receive_one_absolute_deadline():
+    runtime = FakeRuntime()
+
+    async def delayed_body():
+        await asyncio.sleep(.02)
+        yield json.dumps(ADD).encode()
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(runtime, token=TOKEN)),
+                                 base_url="http://test") as client:
+        assert (await client.post("/add", headers=AUTH, content=delayed_body())).status_code == 200
+    assert runtime.received_deadlines == [runtime.deadline]
+    assert runtime.deadline - time.monotonic() < runtime.timeout - .01
+
+
+@pytest.mark.asyncio
+async def test_body_cannot_exceed_total_request_budget():
+    runtime = FakeRuntime()
+    runtime.timeout = .02
+
+    async def stalled_body():
+        await asyncio.Event().wait()
+        yield b"unreachable"
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(runtime, token=TOKEN)),
+                                 base_url="http://test") as client:
+        response = await asyncio.wait_for(client.post("/add", headers=AUTH, content=stalled_body()), .5)
+    assert response.status_code == 408 and not runtime.calls
+
+
+@pytest.mark.asyncio
+async def test_timed_out_owner_keeps_api_busy_after_response():
+    runtime = FakeRuntime()
+
+    async def timeout_add(**values):
+        runtime.busy = True
+        raise TimeoutError("owner still settling")
+
+    runtime.add = timeout_add
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(runtime, token=TOKEN)),
+                                 base_url="http://test") as client:
+        assert (await client.post("/add", headers=AUTH, json=ADD)).status_code == 504
+        values = {"query": "Ada", "user_id": "u", "top_k": 1}
+        response = await client.post("/search", headers=AUTH, json=values)
+        assert response.status_code == 429 and not runtime.calls
+        assert response.headers["retry-after"] == "1"
+        runtime.busy = False
+        assert (await client.post("/search", headers=AUTH, json=values)).status_code == 200

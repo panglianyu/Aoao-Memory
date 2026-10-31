@@ -6,21 +6,23 @@ No Brain, channel discovery, credentials/config loading or legacy stores.
 from __future__ import annotations
 
 import os
+import asyncio
 from kernel.raw_message_service import RawMessageService
 from .daily_runtime import DailyMemoryRuntime
 from .memory_service import MemoryService
 
 
 class RawOriginalExtractor:
+    def __init__(self, *, tokenizer=None):
+        self._tokenizer = tokenizer
+
     async def extract(self, domain, message, source, max_output_tokens):
         if domain != "vector":
             raise ValueError("raw-vector profile cannot derive structured facts")
-        chunks = tuple({"text": message.content[start:start + 8192]}
-                       for start in range(0, len(message.content), 8192)
-                       if message.content[start:start + 8192].strip())
-        if len(chunks) > 10:
-            raise ValueError("original exceeds vector output capacity")
-        return chunks
+        from .storage.token_chunking import chunk_original
+
+        chunks = await asyncio.to_thread(chunk_original, message.content, tokenizer=self._tokenizer)
+        return tuple({"text": chunk} for chunk in chunks)
 
 
 class _MemoryHost:

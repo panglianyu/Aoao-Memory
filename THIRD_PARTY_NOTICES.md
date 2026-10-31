@@ -23,7 +23,7 @@ Development dependencies are pytest, pytest-asyncio, HTTPX, and Ruff; their inst
 
 ## BGE-M3
 
-The embedding model is BAAI/bge-m3, published by the Beijing Academy of Artificial Intelligence. Its upstream model card declares MIT terms: https://huggingface.co/BAAI/bge-m3 . Model weights are obtained separately. The reference cache's main revision was 5617a9f61b028005a4858fdac845db406aefb181; this observation does not certify the live process's loaded weights.
+The embedding model is BAAI/bge-m3, published by the Beijing Academy of Artificial Intelligence. Its upstream model card declares MIT terms: https://huggingface.co/BAAI/bge-m3 . Model weights are obtained separately. Candidate 1.2 explicitly binds its offline tokenizer and nonformal embedding loaders to local revision 5617a9f61b028005a4858fdac845db406aefb181; this does not certify the submitted service's loaded weights.
 
 For model background and original work, see the BGE-M3 model card and its linked FlagEmbedding repository/paper. The integration uses the upstream Sentence Transformer embedding interface; it does not claim the BGE-M3 model as original work.
 

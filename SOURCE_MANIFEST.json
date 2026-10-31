@@ -1,22 +1,22 @@
 {
   "project": "Aoao Memory",
-  "entry_version": "AMC-ENTRY-1.1",
+  "entry_version": "AMC-ENTRY-1.2",
   "role": "reviewed-undeployed-candidate",
   "source_files": [
     {
       "path": "Tools/serve_memory_challenge.py",
       "bytes": 11050,
-      "sha256": "7CFBAFC5E6CAC6DBF87CB6013C580BA5AB0543640A36B53FD0A05E58C471E88D"
+      "sha256": "21F86CBB1754FD9B7EB018934E8C259608D57500BBAF8A301B042FB79F757F3D"
     },
     {
       "path": "apps/system_memory_god/challenge_api.py",
-      "bytes": 8635,
-      "sha256": "B785AE2CC769A23DA8D051D3193EF725317735967A287F76426759F4738237F8"
+      "bytes": 8864,
+      "sha256": "D4859F8457CFA7DDEF4902C46C29866162A660F0BC33F5DC5EDA1699AA125A53"
     },
     {
       "path": "apps/system_memory_god/challenge_runtime.py",
-      "bytes": 12866,
-      "sha256": "FB049B304BFC5B8F6C7C54619816017AAC6F63248E1A0B81C8BA9392D28FD021"
+      "bytes": 14854,
+      "sha256": "288532C8B9C014081DEB4822189A4D60F9A6BCD54C786D25705112B614E93008"
     },
     {
       "path": "apps/system_memory_god/challenge_store.py",
@@ -35,18 +35,18 @@
     },
     {
       "path": "apps/system_memory_god/grouped_extractor.py",
-      "bytes": 5585,
-      "sha256": "69DF943787D7BAF67D3433E88F795F6D0071D1BFC83D752E3F734CFB7A1AFD92"
+      "bytes": 5711,
+      "sha256": "ABDFADD5971BCE0ACBD09C216C4CAFDBB61549D12A2C0DEC86A7A755AABD4C31"
     },
     {
       "path": "apps/system_memory_god/memory_factory.py",
-      "bytes": 3497,
-      "sha256": "F48FDABCAE3BE3AEB8D7B46C90E61344CBF7F22FF49AA4DB3253C07EB37F37C3"
+      "bytes": 3475,
+      "sha256": "863478E820DAD23269AFE5F4130A6F487C903EB4665AD4DCBAB3AF80DE85E1B4"
     },
     {
       "path": "apps/system_memory_god/memory_service.py",
-      "bytes": 6895,
-      "sha256": "89A47B76D0FAA50A82C41ED5843D6767057FDEB2907676759CD21A510F2CCA19"
+      "bytes": 7067,
+      "sha256": "C74D1EAA192C703751DF49281EBD3EA3B0FE1D1E8B1EF8ADA0F013B0DBED8A36"
     },
     {
       "path": "apps/system_memory_god/models.py",
@@ -60,8 +60,8 @@
     },
     {
       "path": "apps/system_memory_god/storage/daily_embedding_adapter.py",
-      "bytes": 18051,
-      "sha256": "B41340B2A05A4129FBD99000F67F570247861CFF436C135E66115C5FF8663A11"
+      "bytes": 19009,
+      "sha256": "3F4B9AFED8973BBC959A88776D1BD12385048C874302C4E6241FDE768589EC3C"
     },
     {
       "path": "apps/system_memory_god/storage/daily_snapshot_file_ops.py",
@@ -150,13 +150,13 @@
     },
     {
       "path": "kernel/daily_memory_contracts.py",
-      "bytes": 6746,
-      "sha256": "6CDA6E205D2CE431C840F0ACE96B4D68627A8ECCFF77F419689838C76ECD2196"
+      "bytes": 8849,
+      "sha256": "779FBF603C766E0E12671BD0533D78DD882DA4FA3AB264E97C54787D304AF1AB"
     },
     {
       "path": "kernel/daily_read_worker.py",
-      "bytes": 14777,
-      "sha256": "2BC524EAB8EECA437F97D3F3ABA6FC82CD890C1B30D5DAF4CC1C3C25FE14BCDD"
+      "bytes": 16067,
+      "sha256": "2869465AC0AAA29F6B1AEE2167C63F13738D8E156159B99572F931C0F53CE452"
     },
     {
       "path": "kernel/embedding_service.py",
@@ -210,8 +210,8 @@
     },
     {
       "path": "kernel/raw_message_reader.py",
-      "bytes": 17827,
-      "sha256": "7FB527DF6D96FD4A723C222ADC212599E8F2B9D7268E0082A88002684791D055"
+      "bytes": 18786,
+      "sha256": "5B48701EAB070332B08468A92C1E595FF5C0F638B304EC71A9E5F4349E9FC944"
     },
     {
       "path": "kernel/raw_message_registry.py",
@@ -220,8 +220,8 @@
     },
     {
       "path": "kernel/raw_message_retrieval.py",
-      "bytes": 62814,
-      "sha256": "0E9C7E56B1DEABB2C7972C13F487ECDFA7B182A3F158093EACDB5FB8FC36E28C"
+      "bytes": 68368,
+      "sha256": "406E9F3C6B062F9FC6654026B3ABD930340870273C3EA8AC8C6AA243238FE00D"
     },
     {
       "path": "kernel/raw_message_schema.py",
@@ -235,8 +235,8 @@
     },
     {
       "path": "kernel/raw_message_store.py",
-      "bytes": 78603,
-      "sha256": "C805DA54CC139A3FD6345AF5E56ABF7EA823544A8F187C40C22B50196C652863"
+      "bytes": 81018,
+      "sha256": "38A25324402B71E5F4F1BD5802B0EB60F61ADF325D77D361E314357109BDBEC3"
     },
     {
       "path": "kernel/raw_message_validation.py",
@@ -250,8 +250,8 @@
     },
     {
       "path": "kernel/supervised_daily_retrieval.py",
-      "bytes": 43925,
-      "sha256": "8A46B60282A7C20C03FA815595B3668D21C84BB707750EB0E55BCE045A63C4F8"
+      "bytes": 44177,
+      "sha256": "C53F604D12C069839E8DE248EA5A704AAA31C2C30F3E75C2A89BAB24EE4CCD3A"
     },
     {
       "path": "kernel/workspace_events.py",
@@ -265,13 +265,13 @@
     },
     {
       "path": "tests/test_memory_challenge_api.py",
-      "bytes": 8103,
-      "sha256": "7E001FA0939525C99B4A14255FDCAEBD68ED61FFE738E5909C0C26368CD60546"
+      "bytes": 10640,
+      "sha256": "9CFA3B05A2DBA54920E0E99499F18B22D791CBB18E42FE4A021700910B48F64B"
     },
     {
       "path": "tests/test_memory_challenge_cli.py",
       "bytes": 6941,
-      "sha256": "6E9210BD86AC23D0162729310CD324D821AE061D0F4DE619901B2ABE1005B7E7"
+      "sha256": "95CC7AE0B6DBA62C2E11CF87A6DDD57CA5E8A5EE50F11FC47C883835450642A8"
     },
     {
       "path": "tests/test_memory_challenge_query_limits.py",
@@ -280,13 +280,28 @@
     },
     {
       "path": "tests/test_memory_challenge_runtime.py",
-      "bytes": 8754,
-      "sha256": "B1A4A70849D72346E4A52D0E8014B27D689AAB89A1600EFD2DA1E9B376A664FD"
+      "bytes": 16508,
+      "sha256": "ED0AEF9F32FDE89AF0716799C74E296F6AA3D072073FD117DD994C8043CBE1D3"
+    },
+    {
+      "path": "apps/system_memory_god/storage/token_chunking.py",
+      "bytes": 4603,
+      "sha256": "88CF04B0F858B234CCC7EE4B41B81E66B83B3AB490BF7DA448985DC224BB3190"
+    },
+    {
+      "path": "tests/test_memory_challenge_hints.py",
+      "bytes": 10388,
+      "sha256": "2948BB50426A68400F8055506DF441AC29EAFA106A6E1A01CC3C208EEAAEE470"
+    },
+    {
+      "path": "tests/test_memory_token_chunking.py",
+      "bytes": 6438,
+      "sha256": "1C58051D2261C524EB2F3FEBA1BDC7956C0381CE2E6D158932BCE835D82D6D5F"
     }
   ],
   "external_model": {
     "id": "BAAI/bge-m3",
-    "observed_cache_reference": "5617a9f61b028005a4858fdac845db406aefb181",
+    "required_local_revision": "5617a9f61b028005a4858fdac845db406aefb181",
     "weights_bundled": false,
     "live_loaded_weights_independently_attested": false
   }

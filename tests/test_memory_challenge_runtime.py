@@ -1,6 +1,7 @@
 """Challenge orchestration over real isolated Raw storage and a fake publisher."""
 
 import asyncio
+import threading
 from types import SimpleNamespace
 
 import pytest
@@ -59,12 +60,14 @@ class FakeService:
 
     async def search(self, scope, query, **options):
         self.last_query = query
+        self.last_options = options
         rows = await self.raw.replay(scope, scope.conversation_id)
         return SimpleNamespace(status="ready", items=[{
             "source_message_id": row.message_id,
             "source_content": row.content,
             "source_time": row.created_at,
         } for row in rows])
+
 
     async def close(self):
         if self.factory.fail_close:
@@ -76,6 +79,27 @@ class FakeService:
 
 def runtime(tmp_path, factory):
     return ChallengeRuntime(tmp_path, client=object(), model="test-model", service_factory=factory)
+
+
+@pytest.mark.asyncio
+async def test_options_reach_scoped_service_as_hints_without_changing_original_query(tmp_path):
+    from kernel.daily_memory_contracts import memory_retrieval_hints
+
+    factory = FakeFactory()
+    service = runtime(tmp_path, factory)
+    query = "original question " * 80
+    try:
+        await add(service)
+        result = await service.search(user_id="alice", query=query, top_k=100,
+                                      options=["Alice", "Carol"])
+        current = factory.services[0]
+        assert current.last_query == query
+        assert current.last_options["retrieval_hints"] == memory_retrieval_hints(["Alice", "Carol"])
+        assert result[0]["content"] == "original"
+        await service.search(user_id="alice", query=query, top_k=100)
+        assert "retrieval_hints" not in current.last_options
+    finally:
+        await service.close()
 
 
 async def add(service, *, user="alice", session="first", request="request-1", text="original"):
@@ -122,7 +146,7 @@ async def test_identical_retry_and_restart_reuse_stable_message_and_timestamp(tm
         rows = await factory.services[-1].raw.replay(
             factory.services[-1].scopes[0], factory.services[-1].scopes[0].conversation_id)
         assert rows == [first]
-        assert reopened.health() == {"state": "ready", "version": "AMC-ENTRY-1.0"}
+        assert reopened.health() == {"state": "ready", "version": "AMC-ENTRY-1.2"}
     finally:
         await reopened.close()
 
@@ -186,12 +210,12 @@ async def test_cancelled_request_settles_publication_before_user_switch(tmp_path
         await asyncio.sleep(.001)
     await factory.services[0].publish_entered.wait()
     pending.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(pending, .5)
     switched = asyncio.create_task(add(service, user="bob"))
     await asyncio.sleep(.01)
-    assert not pending.done() and len(factory.services) == 1
+    assert pending.done() and service.busy and len(factory.services) == 1
     factory.publish_gate.set()
-    with pytest.raises(asyncio.CancelledError):
-        await pending
     await switched
     await service.close()
     assert all(item.closed for item in factory.services)
@@ -214,4 +238,179 @@ async def test_original_long_query_is_forwarded_and_invalid_batch_has_no_write(t
         with pytest.raises(ValueError):
             await service.search(user_id="../../foreign", query="q" * 32769, top_k=100)
     finally:
+        await service.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stage", ["close", "factory", "initialize", "start"])
+async def test_deadline_returns_while_transition_owner_retains_late_result(tmp_path, monkeypatch, stage):
+    factory = FakeFactory()
+    service = runtime(tmp_path, factory)
+    entered, release = asyncio.Event(), asyncio.Event()
+    thread_entered, thread_release = threading.Event(), threading.Event()
+    if stage == "close":
+        await add(service)
+        original = factory.services[0].close
+
+        async def blocked_close():
+            entered.set()
+            await release.wait()
+            await original()
+
+        monkeypatch.setattr(factory.services[0], "close", blocked_close)
+    elif stage == "factory":
+        def blocked_factory(profile, **options):
+            thread_entered.set()
+            assert thread_release.wait(5)
+            return factory(profile, **options)
+
+        service._factory = blocked_factory
+    else:
+        target, name = ((RawMessageService, "initialize_profile") if stage == "initialize"
+                        else (FakeService, "start"))
+        original = getattr(target, name)
+
+        async def blocked(self):
+            entered.set()
+            await release.wait()
+            await original(self)
+
+        monkeypatch.setattr(target, name, blocked)
+    service._timeout = .05
+    pending = asyncio.create_task(add(service, user="bob"))
+    try:
+        if stage == "factory":
+            assert await asyncio.to_thread(thread_entered.wait, 2)
+        else:
+            await asyncio.wait_for(entered.wait(), 2)
+        done, _ = await asyncio.wait({pending}, timeout=.5)
+        assert pending in done, "request deadline must not wait for transition cleanup"
+        with pytest.raises(TimeoutError):
+            pending.result()
+        assert service.busy and len(service._tasks) == 1
+        if stage == "close":
+            assert len(factory.services) == 1 and not factory.services[0].closed
+        else:
+            assert not factory.services or not factory.services[-1].closed
+        # Windows timers may wake one clock tick early. Release the blocked
+        # startup only after the absolute monotonic deadline has also passed.
+        await asyncio.sleep(.03)
+    finally:
+        release.set()
+        thread_release.set()
+        await asyncio.gather(*tuple(service._tasks), return_exceptions=True)
+        await asyncio.gather(pending, return_exceptions=True)
+        await asyncio.sleep(0)
+        try:
+            assert not service.busy and service._service is None
+            assert all(item.closed for item in factory.services)
+            assert service.health()["state"] == "ready"
+        finally:
+            await service.close()
+    assert all(item.closed for item in factory.services)
+    if stage == "close":
+        assert len(factory.services) == 1
+
+
+@pytest.mark.asyncio
+async def test_direct_lock_wait_expires_without_starting_an_owner(tmp_path):
+    factory = FakeFactory()
+    service = runtime(tmp_path, factory)
+    service._timeout = .03
+    await service._lease.acquire()
+    try:
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(add(service), .5)
+        await asyncio.sleep(.01)
+        assert not factory.services and not service.busy
+    finally:
+        service._lease.release()
+        await service.close()
+
+
+@pytest.mark.asyncio
+async def test_checkpoint_after_deadline_settles_before_retry_without_duplicate(tmp_path, monkeypatch):
+    factory = FakeFactory()
+    service = runtime(tmp_path, factory)
+    await add(service, request="seed")
+    entered, release = asyncio.Event(), asyncio.Event()
+    original = service._store.checkpoint
+
+    async def blocked_checkpoint(*args):
+        entered.set()
+        await release.wait()
+        await original(*args)
+
+    monkeypatch.setattr(service._store, "checkpoint", blocked_checkpoint)
+    service._timeout = .05
+    pending = asyncio.create_task(add(service, request="slow", text="durable original"))
+    try:
+        await asyncio.wait_for(entered.wait(), 2)
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(pending, .5)
+        assert service.busy
+        release.set()
+        await asyncio.gather(*tuple(service._tasks), return_exceptions=True)
+        monkeypatch.setattr(service._store, "checkpoint", original)
+        service._timeout = 2
+        assert (await add(service, request="slow", text="durable original"))["success"]
+        rows = await factory.services[0].raw.replay(
+            factory.services[0].scopes[0], factory.services[0].scopes[0].conversation_id)
+        assert [row.content for row in rows] == ["original", "durable original"]
+    finally:
+        release.set()
+        await service.close()
+
+
+@pytest.mark.asyncio
+async def test_shutdown_waits_for_cancelled_request_owner(tmp_path):
+    factory = FakeFactory()
+    factory.publish_gate = asyncio.Event()
+    service = runtime(tmp_path, factory)
+    pending = asyncio.create_task(add(service))
+    while not factory.services:
+        await asyncio.sleep(.001)
+    await factory.services[0].publish_entered.wait()
+    pending.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(pending, .5)
+    closing = asyncio.create_task(service.close())
+    await asyncio.sleep(.01)
+    assert not closing.done() and not factory.services[0].closed
+    factory.publish_gate.set()
+    await asyncio.wait_for(closing, 2)
+    assert factory.services[0].closed and service.health()["state"] == "stopped"
+
+
+@pytest.mark.asyncio
+async def test_close_failure_after_waiter_timeout_retains_owner_and_blocks_replacement(tmp_path, monkeypatch):
+    factory = FakeFactory()
+    service = runtime(tmp_path, factory)
+    await add(service)
+    old = factory.services[0]
+    entered, release = asyncio.Event(), asyncio.Event()
+    original = old.close
+
+    async def failed_close():
+        entered.set()
+        await release.wait()
+        raise RuntimeError("private delayed close failure")
+
+    monkeypatch.setattr(old, "close", failed_close)
+    service._timeout = .03
+    pending = asyncio.create_task(add(service, user="bob"))
+    try:
+        await entered.wait()
+        with pytest.raises(TimeoutError):
+            await pending
+        assert service.busy and service._service is old
+        release.set()
+        await asyncio.gather(*tuple(service._tasks), return_exceptions=True)
+        assert service.health()["state"] == "unavailable" and service._service is old
+        with pytest.raises(RuntimeError, match="unavailable"):
+            await add(service, user="charlie")
+        assert len(factory.services) == 1 and not old.closed
+    finally:
+        release.set()
+        monkeypatch.setattr(old, "close", original)
         await service.close()

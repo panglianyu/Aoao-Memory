@@ -4,7 +4,7 @@ A Windows Add/Search service for persistent original messages and derived memory
 
 ## Versions and scope
 
-The AMC-ENTRY-1.0 tag matches the submitted API source. This codex/amc-entry-1.1 branch is an undeployed candidate with OS-lease and integer-timestamp fixes. SOURCE_MANIFEST.json identifies its source files; VALIDATION.md records actual checks. The submitted online service remains AMC-ENTRY-1.0.
+The AMC-ENTRY-1.0 tag matches the submitted API source. This codex/amc-entry-1.2 branch is an undeployed candidate. It inherits 1.1's OS-lease and integer-timestamp fixes and adds bounded request waiting, option-assisted retrieval and token-aware original slices. SOURCE_MANIFEST.json identifies its source files; VALIDATION.md records actual checks. The submitted online service remains AMC-ENTRY-1.0.
 
 Publishing source does not change this industrial entry's group or establish compliance with the open-source track's prescribed models.
 
@@ -21,7 +21,7 @@ Use Windows 64-bit and Python 3.10 with the Python launcher; the reference was 3
 Install from a short checkout path:
 
 ~~~powershell
-git clone https://github.com/panglianyu/Aoao-Memory.git
+git clone --branch codex/amc-entry-1.2 https://github.com/panglianyu/Aoao-Memory.git
 cd Aoao-Memory
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup.ps1 -Dev
 ~~~
@@ -36,10 +36,10 @@ Obtain BAAI/bge-m3 under its upstream terms. Use a dedicated cache and allow net
 $env:HF_HOME = 'C:/amc-model-cache'
 $env:HF_HUB_OFFLINE = '0'
 $env:TRANSFORMERS_OFFLINE = '0'
-& .\.venv\Scripts\python.exe -c "from pathlib import Path; from huggingface_hub import snapshot_download; p=Path(snapshot_download('BAAI/bge-m3')); expected='5617a9f61b028005a4858fdac845db406aefb181'; print('Cached revision:',p.name); raise SystemExit(0 if p.name==expected else 'Revision differs; review the model before starting')"
+& .\.venv\Scripts\python.exe -c "from pathlib import Path; from huggingface_hub import snapshot_download; expected='5617a9f61b028005a4858fdac845db406aefb181'; p=Path(snapshot_download('BAAI/bge-m3',revision=expected)); print('Cached revision:',p.name); raise SystemExit(0 if p.name==expected else 'Revision differs; review the model before starting')"
 ~~~
 
-Stop if provisioning fails or reports a different revision. The hash above was observed in the reference cache metadata; it is not independent attestation of the live process's loaded weights. Keep HF_HOME set when launching. The CLI forces offline model loading. The optional formal embedding/vendor audit configuration is not packaged or certified here.
+Stop if provisioning fails or reports a different revision. Candidate 1.2 requires this exact local snapshot for both its fast tokenizer and nonformal BGE workers. This binding is not independent attestation of the submitted service's loaded weights. Keep HF_HOME set when launching. The CLI forces offline model loading. The optional formal embedding/vendor audit configuration is not packaged or certified here.
 
 ## Private configuration and launch
 
@@ -75,13 +75,15 @@ Invoke-RestMethod http://127.0.0.1:8795/search -Method Post -Headers $headers -C
 
 Add returns success and the request/user/session IDs. Search returns data containing source id/content and optional created_at. Authentication is required before request processing. Busy requests return 429; conflicts return 409; publication deadlines return 504. A timeout does not erase durable ingestion: retry only the same request ID and body.
 
-Limits: 2 MiB JSON body, 256 messages, 81,920 characters/message, 32,768 characters/query, IDs up to 256 characters, top_k 1..100. BGE's 8,192-token model limit is separate from character limits.
+Limits: 2 MiB JSON body, 256 messages, 81,920 characters/message, 32,768 characters/query, IDs up to 256 characters, top_k 1..100. Each original-vector slice is limited to 8,192 characters and 8,192 tokens including special tokens, with at most ten slices. Some otherwise-valid raw messages cannot fit those vector limits: derivation fails explicitly and the durable original remains; tails are never silently discarded.
+
+Optional multiple-choice options supply at most sixteen literal hints and 512 characters. They enable one additional scoped raw lexical query of at most 150ms within the existing retrieval deadline. The original question remains unchanged and is the only vector query; options are never stored as facts or treated as instructions. Front-end request timeouts or cancellation retain the active background owner until accepted work settles; new requests receive busy responses in the meantime.
 
 ## Validation and limitations
 
 Reference checks covered synthetic tests and a two-user/four-message real smoke; see VALIDATION.md. Improved accuracy, official Smoke/Full, bulk throughput, crash recovery, and production privacy acceptance remain unproved.
 
-Version 1.0's HTTP layer accepts floats but its runtime accepts integers: submit integers. It also lacks a cross-process data-root lease; the 1.1 candidate fixes both issues. User switching reloads resources. Full-scale batches have not been proved to fit the 100-second deadline.
+Version 1.0's HTTP layer accepts floats but its runtime accepts integers: submit integers. It also lacks a cross-process data-root lease; both 1.1 and this 1.2 candidate fix those issues. User switching still reloads resources. Full-scale batches have not been proved to fit the 100-second deadline. No existing data migration or official version rebinding is included; do not point this candidate at a submitted service's active data root.
 
 ## Development and Codex
 

@@ -80,7 +80,7 @@ def test_lease_only_interrupted_root_recovers_and_keeps_v1_storage_marker(tmp_pa
         assert not os.get_inheritable(lease.descriptor)
         cli._prepare_root(root)
         assert (root / cli._MARKER).read_bytes() == b"AMC-ENTRY-1.0\n"
-        assert cli.ENTRY_VERSION == "AMC-ENTRY-1.1"
+        assert cli.ENTRY_VERSION == "AMC-ENTRY-1.2"
     finally:
         lease.close()
     assert (root / cli._LEASE_FILE).is_file()

@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import stat
+from functools import lru_cache
 
 
 _FORMAL_FILES = frozenset({"1_Pooling/config.json", "README.md", "config.json",
@@ -127,17 +128,34 @@ def _formal_file(path, limit=None):
     return body, before
 
 
+@lru_cache(maxsize=1)
+def _local_bge_model():
+    from sentence_transformers import SentenceTransformer
+    from .token_chunking import bge_snapshot, MAX_CHUNK_TOKENS
+
+    snapshot = bge_snapshot()
+    model = SentenceTransformer(str(snapshot), device="cpu", local_files_only=True, trust_remote_code=False,
+        tokenizer_kwargs={"local_files_only": True, "trust_remote_code": False},
+        config_kwargs={"local_files_only": True, "trust_remote_code": False})
+    if (model.max_seq_length != MAX_CHUNK_TOKENS
+            or not getattr(model.tokenizer, "is_fast", False)
+            or Path(model.tokenizer.name_or_path).resolve() != snapshot):
+        raise RuntimeError("BGE tokenizer binding unavailable")
+    return model
+
+
 def embed_bge_m3(texts: list[str]) -> list[list[float]]:
     if (type(texts) is not list or not 1 <= len(texts) <= 100
             or any(type(text) is not str or not text.strip() for text in texts)):
         raise ValueError("invalid embedding input")
 
-    from kernel import embedding_service
+    from .token_chunking import token_count, MAX_CHUNK_TOKENS
 
-    model = embedding_service.get_bge_m3_embedding()
-    if model is None:
-        raise RuntimeError("bge-m3 unavailable")
-    generated = model(texts)
+    model = _local_bge_model()
+    if any(token_count(text, model.tokenizer) > MAX_CHUNK_TOKENS for text in texts):
+        raise ValueError("BGE token capacity exceeded")
+    generated = model.encode(texts, normalize_embeddings=False, convert_to_numpy=True,
+                             show_progress_bar=False, prompt="")
     if len(generated) != len(texts):
         raise RuntimeError("embedding count mismatch")
     vectors = [[float(value) for value in row] for row in generated]

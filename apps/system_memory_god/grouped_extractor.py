@@ -21,13 +21,16 @@ _GROUP_PROMPT = (
     "time as reference; use timezone-aware ISO timestamps, otherwise null. Preserve original language. "
     "Return exactly these five JSON arrays, each with at most 10 records and exactly the shown fields: "
     + canonical({domain: [_SHAPES[domain]] for domain in STRUCTURED_DOMAINS}))
-_VECTOR_HASH = hashlib.sha256(b"exact original slices of 8192 characters; no LLM").hexdigest()
+_VECTOR_HASH = hashlib.sha256(
+    b"exact continuous original slices; bge-m3@5617a9f61b028005a4858fdac845db406aefb181; "
+    b"fast offsets; special-inclusive tokens<=8192; chars<=8192; chunks<=10; no LLM"
+).hexdigest()
 _GROUP_HASH = hashlib.sha256(_GROUP_PROMPT.encode()).hexdigest()
 
 
 def memory_specs(mode: str, model: str = "none") -> tuple[DerivationSpec, ...]:
     identity(model)
-    vector = DerivationSpec("memory-raw-vector", "v1", "vector", "none", _VECTOR_HASH)
+    vector = DerivationSpec("memory-raw-vector", "v2", "vector", "none", _VECTOR_HASH)
     if mode == "raw-vector-v1":
         return (vector,)
     if mode != "memory-full-v1":
