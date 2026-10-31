@@ -1,0 +1,44 @@
+# Local environments and generated Python/test files
+.venv/
+venv/
+runtime_env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage*
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Private configuration and credentials
+.env
+.env.*
+config/*
+!config/provider.example.json
+*.key
+*.pem
+*.pfx
+*.p12
+
+# Runtime data, model files, and logs
+data/
+models/
+logs/
+runtime/
+Temp/
+*.log
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+
+# Private publication preparation records
+SANITIZATION_REPORT.md
+*.FORK_REPORT.md
+*.UNREADABLE_FILES.txt
+LICENSE.proposed
+
