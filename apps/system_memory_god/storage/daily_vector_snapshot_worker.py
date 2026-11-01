@@ -11,7 +11,8 @@ import time
 from kernel.memory_pipeline_models import PipelineScope
 from kernel.daily_memory_contracts import MAX_MEMORY_QUERY_CHARS
 from .daily_vector_snapshot import SnapshotData, load_snapshot
-from .daily_vector_worker import MAX_FRAME_BYTES, _synthetic_embed
+from .daily_vector_worker import (MAX_FRAME_BYTES, _bind_shared_deadline, _shared_command,
+                                  _synthetic_embed, _validate_shared_embedding)
 
 
 DIAGNOSTIC_STAGES = frozenset({"input", "preparation", "embedding", "numerical", "complete"})
@@ -44,7 +45,8 @@ def validate_diagnostic(value: object, request_id: int) -> dict:
 
 
 def serve_snapshot(connection: Connection, root_text: str, embedding: str, diagnostics: bool = False,
-                   *, formal_embedding=None) -> None:
+                   *, formal_embedding=None, embedding_client=None, embedding_deadline_ns=None) -> None:
+    _validate_shared_embedding(embedding, formal_embedding, embedding_client, embedding_deadline_ns)
     if type(diagnostics) is not bool:
         raise ValueError("invalid snapshot diagnostics mode")
     if formal_embedding is not None:
@@ -56,14 +58,21 @@ def serve_snapshot(connection: Connection, root_text: str, embedding: str, diagn
     prepared: dict[PipelineScope, SnapshotData] = {}
     root = Path(root_text)
     if embedding == "bge-m3":
-        from .daily_embedding_adapter import embed_bge_m3, FormalEmbeddingAdapter
         try:
-            embed = FormalEmbeddingAdapter(formal_embedding) if formal_embedding is not None else embed_bge_m3
+            if embedding_client is not None:
+                _bind_shared_deadline(embedding_client, embedding_deadline_ns)
+                embed = embedding_client
+            else:
+                from .daily_embedding_adapter import embed_bge_m3, FormalEmbeddingAdapter
+
+                embed = FormalEmbeddingAdapter(formal_embedding) if formal_embedding is not None else embed_bge_m3
             embed(["阿露语义只读查询预热"])
             actual = embed.actual() if formal_embedding is not None else None
         except Exception:
             connection.send_bytes(b'{"version":2,"ready":false,"error":"embedding"}' if formal_embedding is not None else b'{"version":1,"ready":false,"error":"embedding"}')
             connection.close()
+            if embedding_client is not None:
+                embedding_client.close()
             return
     elif embedding in {"synthetic", "synthetic-stall"}:
         embed = _synthetic_embed
@@ -78,7 +87,7 @@ def serve_snapshot(connection: Connection, root_text: str, embedding: str, diagn
                           "error_type": "none", "embedding_ms": None, "numerical_ms": None,
                           "complete": False}
             try:
-                request = json.loads(connection.recv_bytes(MAX_FRAME_BYTES))
+                request = _shared_command(json.loads(connection.recv_bytes(MAX_FRAME_BYTES)), embedding_client)
                 base = {"version", "id", "scope", "op"}
                 if (type(request) is not dict or type(request.get("version")) is not int
                         or request["version"] != 1 or type(request.get("id")) is not int
@@ -139,3 +148,5 @@ def serve_snapshot(connection: Connection, root_text: str, embedding: str, diagn
             connection.send_bytes(body)
     finally:
         connection.close()
+        if embedding_client is not None:
+            embedding_client.close()

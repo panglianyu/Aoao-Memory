@@ -14,7 +14,7 @@ import re
 import stat
 from typing import Callable, Iterator
 
-from kernel.project_workspace_io import hold_directory_chain, publish_opened_file
+from kernel.project_workspace_io import publish_opened_file
 
 _HASH = re.compile(r"[0-9a-f]{64}")
 _TEMP = re.compile(r"(?:staging|pointer)-[0-9a-f]{32}")
@@ -339,23 +339,17 @@ class SnapshotFileOps:
     def _hold(self, directory: Path) -> Iterator[None]:
         if os.name != "nt":
             raise OSError("bound snapshot deletion requires Windows")
-        # The shared guard uses ordinary Win32 paths. Bind only the long suffix
-        # here, using the same no-write/no-delete sharing and handle identity.
+        # Sibling caches may share this anchor. Guards need READ access only;
+        # requesting WRITE here conflicts with another guard's READ-only share.
+        # _bound keeps no-write/no-delete sharing and supports extended paths.
         directory = _ordinary(directory)
         if not directory.is_relative_to(self.anchor):
             raise ValueError("snapshot cleanup outside owned anchor")
         with ExitStack() as handles:
             current = self.anchor
             # Never climb outside the captured owner, including long paths.
-            if len(str(current)) <= 240:
-                ordinary_end = directory
-                while len(str(ordinary_end)) > 240 and ordinary_end != self.anchor:
-                    ordinary_end = ordinary_end.parent
-                handles.enter_context(hold_directory_chain(self.anchor, ordinary_end))
-                current = ordinary_end
-            else:
-                handles.enter_context(_bound(current, _extended(current).lstat(),
-                                             directory=True, deleting=False))
+            handles.enter_context(_bound(current, self.anchor_identity,
+                                         directory=True, deleting=False))
             for part in directory.relative_to(current).parts:
                 current = current / part
                 handles.enter_context(_bound(current, _extended(current).lstat(),

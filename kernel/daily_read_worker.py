@@ -14,6 +14,7 @@ from kernel.memory_pipeline_models import PipelineScope
 from kernel.raw_message_models import RawMessageError, Scope, ScopeError
 from kernel.raw_message_reader import RawReadLifetime, RawReadView
 from kernel.raw_message_retrieval import RawMessageRetrieval
+from kernel.daily_memory_contracts import DailyRecallOutcome, validate_retrieval_hints
 from system_memory_god.storage.derived_read_view import (
     DerivedEvidenceReadView, SourceLedgerReadView,
 )
@@ -32,24 +33,30 @@ class _EvidenceReadView:
 
     evidence_mode = True
 
-    def __init__(self, view: RawReadView, query: str):
+    def __init__(self, view: RawReadView, query: str, hints: tuple[str, ...] = ()):
         self.view, self.query = view, query
+        self.window_query = (query, *hints) if hints else query
 
     def __getattr__(self, name):
         return getattr(self.view, name)
 
     def search(self, scope, query, **kwargs):
-        return self.view.search_evidence_page(scope, query, **kwargs)
+        return self.search_page(scope, query, **kwargs)
 
     def search_page(self, scope, query, **kwargs):
+        if type(self.window_query) is tuple:
+            kwargs["evidence_query"] = self.window_query
         return self.view.search_evidence_page(scope, query, **kwargs)
+
+    def hint_search(self, scope, hints, **kwargs):
+        return self.view.hint_search(scope, hints, evidence_query=self.window_query, **kwargs)
 
     def published_snapshots(self, scope, message_ids, **kwargs):
         return self.view.published_evidence_snapshots(scope, message_ids,
-                                                     query=self.query, **kwargs)
+                                                     query=self.window_query, **kwargs)
 
     def neighbors(self, scope, message_id, **kwargs):
-        return self.view.evidence_neighbors(scope, message_id, query=self.query, **kwargs)
+        return self.view.evidence_neighbors(scope, message_id, query=self.window_query, **kwargs)
 
 
 class _ReadRegistry:
@@ -105,7 +112,7 @@ def _search(raw_path: Path, derived_root: Path, request: dict, *,
         if not expected.issubset(request):
             raise ValueError("invalid candidate request")
         request = {key: value for key, value in request.items() if key not in expected}
-    if (type(request) is not dict or set(request) - {"query_options"} != {
+    if (type(request) is not dict or set(request) - {"query_options", "retrieval_hints"} != {
             "version", "id", "scope", "query", "top_k", "neighbors", "start_ts",
             "end_ts", "memory_scope", "vector_hits", "deadline"}
             or request["version"] != READ_PROTOCOL_VERSION or type(request["id"]) is not int
@@ -115,6 +122,7 @@ def _search(raw_path: Path, derived_root: Path, request: dict, *,
             or type(request["deadline"]) not in {int, float}
             or not math.isfinite(request["deadline"])):
         raise ValueError("invalid read request")
+    hints = validate_retrieval_hints(request.get("retrieval_hints", ()))
     remaining = request["deadline"] - time.monotonic()
     if remaining <= 0:
         raise TimeoutError("read request expired")
@@ -129,7 +137,7 @@ def _search(raw_path: Path, derived_root: Path, request: dict, *,
         hits.append((pair[0], pair[1]))
     raw = _EvidenceReadView(RawReadView(raw_path, trusted_root=raw_path.parent, scope=scope,
                                      lifetime=lifetime),
-                            request["query"])
+                            request["query"], hints)
     stores = _ReadStores(derived_root)
     # Account for actual scope/query/envelope bytes before the candidate array.
     # collect cannot know the next vector hits yet: reserve their validated
@@ -142,6 +150,7 @@ def _search(raw_path: Path, derived_root: Path, request: dict, *,
                                     request_timeout_seconds=min(0.3, remaining),
                                     collect_only=operation == "collect",
                                     query_options=request.get("query_options"),
+                                    retrieval_hints=hints,
                                     candidate_byte_budget=min(1024 * 1024 - 4096,
                                         MAX_READ_RESULT - overhead - vector_reserve))
     if operation == "publish":
@@ -151,11 +160,23 @@ def _search(raw_path: Path, derived_root: Path, request: dict, *,
             end_ts=request["end_ts"], memory_scope=request["memory_scope"],
             deadline=request["deadline"])))
     else:
-        result = asdict(asyncio.run(retrieval.search_with_status(
-        scope, request["query"], top_k=request["top_k"],
-        neighbors=request["neighbors"], start_ts=request["start_ts"],
-        end_ts=request["end_ts"], memory_scope=request["memory_scope"],
-        deadline=request["deadline"])))
+        async def collect():
+            outcome = await retrieval.search_with_status(
+                scope, request["query"], top_k=request["top_k"],
+                neighbors=request["neighbors"], start_ts=request["start_ts"],
+                end_ts=request["end_ts"], memory_scope=request["memory_scope"],
+                deadline=request["deadline"])
+            if operation != "collect" or not hints or outcome.status == "unavailable":
+                return outcome
+            reasons = list(outcome.reason_codes)
+            items = await retrieval.collect_hint_candidates(scope, outcome.items,
+                start_ts=request["start_ts"], end_ts=request["end_ts"],
+                deadline=request["deadline"], reasons=reasons,
+                memory_scope=request["memory_scope"])
+            return DailyRecallOutcome(items, "degraded" if reasons else "ready",
+                                      tuple(dict.fromkeys(reasons)), outcome.trace)
+
+        result = asdict(asyncio.run(collect()))
     if result.get("trace") is None:
         result.pop("trace", None)
     if operation == "collect":

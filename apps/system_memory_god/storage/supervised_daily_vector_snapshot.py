@@ -16,7 +16,10 @@ from .supervised_daily_vector import SNAPSHOT_QUERY_TIMEOUT, SupervisedDailyVect
 class SupervisedDailyVectorSnapshot:
     def __init__(self, cache: DailyVectorSnapshot, *, embedding: str | None = None,
                  diagnostics: bool = False, auto_recover: bool = True,
-                 query_timeout: float = SNAPSHOT_QUERY_TIMEOUT, formal_embedding=None):
+                 query_timeout: float = SNAPSHOT_QUERY_TIMEOUT, formal_embedding=None,
+                 embedding_client=None, embedding_deadline_ns=None):
+        if formal_embedding is not None and embedding_client is not None:
+            raise ValueError("formal and shared embedding cannot be combined")
         if formal_embedding is not None:
             from kernel.raw_message_profile import FormalEmbeddingBinding
 
@@ -38,7 +41,9 @@ class SupervisedDailyVectorSnapshot:
         self._local_diagnostic: dict = {}
         self._transport = SupervisedDailyVector(ScopedStores(cache.root), embedding=selected,
             request_timeout=query_timeout, max_pending=8, process_role="snapshot", diagnostics=diagnostics,
-            **({"formal_embedding": formal_embedding} if formal_embedding is not None else {}))
+            **({"formal_embedding": formal_embedding} if formal_embedding is not None else {}),
+            **({"embedding_client": embedding_client, "embedding_deadline_ns": embedding_deadline_ns}
+               if embedding_client is not None or embedding_deadline_ns is not None else {}))
         self._ready: dict[PipelineScope, str] = {}
         self._lifecycle = asyncio.Lock()
         self._closed = False
@@ -51,6 +56,9 @@ class SupervisedDailyVectorSnapshot:
     @property
     def worker_pid(self) -> int | None:
         return self._transport.worker_pid
+
+    def set_embedding_deadline(self, deadline_ns: int) -> None:
+        self._transport.set_embedding_deadline(deadline_ns)
 
     def available(self, scope: PipelineScope) -> bool:
         return (not self._closed and scope in self._ready and self.worker_pid is not None
@@ -179,7 +187,8 @@ class SupervisedDailyVectorSnapshot:
         return tuple(hits)
 
     def _schedule_recovery(self) -> None:
-        if (not self.auto_recover or self._closed or self.recovery_attempts >= 3
+        if (self._transport.embedding_client is not None
+                or not self.auto_recover or self._closed or self.recovery_attempts >= 3
                 or self._recovery is not None and not self._recovery.done()):
             return
         async def recover():

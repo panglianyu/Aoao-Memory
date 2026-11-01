@@ -22,6 +22,42 @@ from .scoped_stores import ScopedStores
 MAX_FRAME_BYTES = 2 * 1024 * 1024
 
 
+def _embedding_deadline(value) -> int:
+    if type(value) is not int or not 0 < value < 2**63:
+        raise ValueError("invalid shared embedding deadline")
+    return value
+
+
+def _validate_shared_embedding(embedding, formal_embedding, client, deadline_ns) -> None:
+    if client is None and deadline_ns is None:
+        return
+    if formal_embedding is not None:
+        raise ValueError("formal and shared embedding cannot be combined")
+    if (embedding != "bge-m3" or not callable(client)
+            or any(not callable(getattr(client, method, None)) for method in
+                   ("bind_deadline", "close_parent_copy", "close"))):
+        raise ValueError("explicit shared embedding client required")
+    if _embedding_deadline(deadline_ns) <= time.monotonic_ns():
+        raise ValueError("expired shared embedding configuration")
+
+
+def _bind_shared_deadline(client, deadline_ns) -> None:
+    if _embedding_deadline(deadline_ns) <= time.monotonic_ns():
+        raise TimeoutError("shared embedding operation deadline exceeded")
+    client.bind_deadline(deadline_ns)
+
+
+def _shared_command(request, client):
+    if client is None:
+        return request
+    if type(request) is not dict:
+        raise ValueError("invalid shared embedding command")
+    request = dict(request)
+    absolute = request.pop("embedding_deadline_ns", None)
+    _bind_shared_deadline(client, absolute)
+    return request
+
+
 def _synthetic_embed(texts: list[str]) -> list[list[float]]:
     vectors = []
     for value in texts:
@@ -140,8 +176,10 @@ def _owner_file(root: Path):
     return handle
 
 
-def serve(connection: Connection, root_text: str, embedding: str, *, formal_embedding=None) -> None:
+def serve(connection: Connection, root_text: str, embedding: str, *, formal_embedding=None,
+          embedding_client=None, embedding_deadline_ns=None) -> None:
     """Process entry point; never import or read production model configuration."""
+    _validate_shared_embedding(embedding, formal_embedding, embedding_client, embedding_deadline_ns)
     if formal_embedding is not None:
         from kernel.raw_message_profile import FormalEmbeddingBinding
 
@@ -157,23 +195,31 @@ def serve(connection: Connection, root_text: str, embedding: str, *, formal_embe
     except (OSError, RuntimeError, ValueError):
         connection.send_bytes(b'{"version":2,"ready":false,"error":"owner"}' if formal_embedding is not None else b'{"version":1,"ready":false,"error":"owner"}')
         connection.close()
+        if embedding_client is not None:
+            embedding_client.close()
         return
     if embedding == "bge-m3":
-        from .daily_embedding_adapter import embed_bge_m3, FormalEmbeddingAdapter
-
         try:
-            embed = FormalEmbeddingAdapter(formal_embedding) if formal_embedding is not None else embed_bge_m3
+            if embedding_client is not None:
+                _bind_shared_deadline(embedding_client, embedding_deadline_ns)
+                embed = embedding_client
+            else:
+                from .daily_embedding_adapter import embed_bge_m3, FormalEmbeddingAdapter
+
+                embed = FormalEmbeddingAdapter(formal_embedding) if formal_embedding is not None else embed_bge_m3
             embed(["阿露记忆向量预热"])
             actual = embed.actual() if formal_embedding is not None else None
         except (RuntimeError, ValueError, OSError):
             connection.send_bytes(b'{"version":2,"ready":false,"error":"embedding"}' if formal_embedding is not None else b'{"version":1,"ready":false,"error":"embedding"}')
             connection.close()
             owner.close()
+            if embedding_client is not None:
+                embedding_client.close()
             return
     else:
         embed = _synthetic_stall if embedding == "synthetic-stall" else _synthetic_embed
-    index = DailyVectorIndex(stores, embed)
     try:
+        index = DailyVectorIndex(stores, embed)
         if embedding == "synthetic-bad-ready":
             connection.send_bytes(b"[]")
             time.sleep(60)
@@ -187,7 +233,8 @@ def serve(connection: Connection, root_text: str, embedding: str, *, formal_embe
                 break
             request = None
             try:
-                request = _validate_request(json.loads(data, parse_constant=_reject_constant))
+                request = _validate_request(_shared_command(
+                    json.loads(data, parse_constant=_reject_constant), embedding_client))
                 result = _execute(index, request)
                 if embedding == "synthetic-drop-ack" and request["op"] == "put":
                     return
@@ -202,3 +249,5 @@ def serve(connection: Connection, root_text: str, embedding: str, *, formal_embe
     finally:
         connection.close()
         owner.close()
+        if embedding_client is not None:
+            embedding_client.close()

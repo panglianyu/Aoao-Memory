@@ -1,8 +1,7 @@
 {
   "openai": {
-    "base_url": "https://your-provider.example/v1",
-    "api_key": "",
-    "model_name": ""
+    "base_url": "https://provider.invalid/v1",
+    "api_key": "INVALID_EXAMPLE_DO_NOT_USE",
+    "model_name": "REPLACE_WITH_PROVIDER_MODEL"
   }
 }
-

@@ -8,6 +8,7 @@ import time
 
 from kernel.daily_memory_contracts import (
     DailyRecallOutcome, MemorySaveReceipt, MEMORY_DOMAINS, validate_memory_query_options,
+    validate_retrieval_hints,
 )
 from kernel.memory_pipeline_models import PipelineScope
 from kernel.raw_message_models import MessageDraft, Scope, ScopeError
@@ -42,6 +43,7 @@ class MemoryService:
         return await self.raw.replay(scope, scope.conversation_id, **options)
 
     async def search(self, scope: Scope, query: str, **options) -> DailyRecallOutcome:
+        hints = validate_retrieval_hints(options.pop("retrieval_hints", ()))
         try:
             self._authorize(scope)
         except ScopeError:
@@ -65,6 +67,8 @@ class MemoryService:
             # Old LongMemEval calls keep their exact ranking/query identity.
             if full or trace or domains is not None or excluded or event_start is not None or event_end is not None:
                 options["query_options"] = query_options
+        if hints:
+            options["retrieval_hints"] = hints
         return await self.retrieval.search_with_status(scope, query, **options)
 
     async def status(self, scope: Scope, *, deadline: float) -> dict:

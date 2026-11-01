@@ -291,7 +291,8 @@ class RawReadView:
                 end_ts=end_ts, before=before, deadline=deadline))
 
     def search_evidence_page(self, scope: Scope, query: str, *, limit: int = 10,
-                             start_ts=None, end_ts=None, before=None, deadline=None
+                             start_ts=None, end_ts=None, before=None, deadline=None,
+                             evidence_query: tuple[str, ...] | None = None,
                              ) -> list[RawMessageEvidence]:
         self._require_scope(scope)
         needle = validate_raw_search(scope, query, limit=limit, start_ts=start_ts,
@@ -299,10 +300,26 @@ class RawReadView:
         with self._open(deadline=deadline) as db:
             return cast(list[RawMessageEvidence], query_raw_search_page(
                 db, scope, needle, limit=limit, start_ts=start_ts, end_ts=end_ts,
-                before=before, deadline=deadline, evidence_query=needle))
+                before=before, deadline=deadline,
+                evidence_query=evidence_query if evidence_query is not None else needle))
+
+    def hint_search(self, scope: Scope, hints: tuple[str, ...], *,
+                    evidence_query: tuple[str, ...], start_ts=None, end_ts=None,
+                    deadline: float) -> list[RawMessageEvidence]:
+        from kernel.raw_message_store import query_raw_hint_candidates
+
+        self._require_scope(scope)
+        try:
+            with self._open(deadline=deadline) as db:
+                return query_raw_hint_candidates(db, scope, hints, evidence_query=evidence_query,
+                    start_ts=start_ts, end_ts=end_ts, deadline=deadline)
+        except RawMessageError as exc:
+            if str(exc) in {"publication budget exceeded", "search budget exceeded"}:
+                raise TimeoutError("hint query deadline exceeded") from None
+            raise
 
     def published_evidence_snapshots(self, scope: Scope, message_ids: tuple[str, ...], *,
-                                     query: str, proofs=None, deadline=None
+                                     query: str | tuple[str, ...], proofs=None, deadline=None
                                      ) -> dict[str, tuple[RawMessageEvidence, tuple[dict, ...]]]:
         self._require_scope(scope)
         deadline = _publication_deadline(deadline)
@@ -320,7 +337,7 @@ class RawReadView:
                 expected_revision=expected_revision, expected_content_hash=expected_content_hash,
                 offset_chars=offset_chars, limit_chars=limit_chars)
 
-    def evidence_neighbors(self, scope: Scope, message_id: str, *, query: str,
+    def evidence_neighbors(self, scope: Scope, message_id: str, *, query: str | tuple[str, ...],
                            before: int = 2, after: int = 2, deadline=None
                            ) -> list[RawMessageEvidence]:
         return [raw_evidence(message, query) for message in self.neighbors(

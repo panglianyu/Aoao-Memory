@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import math
 import re
 import time
-from typing import Literal, Protocol, TYPE_CHECKING
+from typing import Literal, Protocol, TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from kernel.raw_message_models import StoredMessage
@@ -100,6 +100,54 @@ def memory_query_terms(query: str) -> tuple[str, ...]:
             token[i:i + 2] for i in range(len(token) - 1)]
         terms.extend(parts)
     return tuple(dict.fromkeys(terms))[:8] or (query.strip().lower(),)
+
+
+def validate_retrieval_hints(value: object) -> tuple[str, ...]:
+    """Finite literal words only; these never carry authority or instructions."""
+    if type(value) not in {tuple, list}:
+        raise ValueError("invalid retrieval hints")
+    values = cast("list[str] | tuple[str, ...]", value)
+    if (len(values) > 16
+            or any(type(term) is not str or not term or term != term.lower()
+                   or re.fullmatch(r"[a-z0-9_]+|[\u3400-\u9fff]{1,2}", term) is None
+                   for term in values)
+            or sum(map(len, values)) > 512 or len(set(values)) != len(values)):
+        raise ValueError("invalid retrieval hints")
+    return tuple(values)
+
+
+def memory_retrieval_hints(options: object) -> tuple[str, ...]:
+    """Select a stable round-robin set without changing the original query."""
+    if type(options) not in {list, tuple}:
+        raise ValueError("invalid options")
+    values = cast("list[str] | tuple[str, ...]", options)
+    if (len(values) > 256
+            or any(type(option) is not str or not option.strip() or len(option) > 32768
+                   for option in values)):
+        raise ValueError("invalid options")
+    try:
+        for option in values:
+            option.encode("utf-8")
+    except UnicodeError:
+        raise ValueError("invalid options") from None
+    normalized = sorted({" ".join(option.lower().split()) for option in values})
+    queues = [tuple(term for term in memory_query_terms(option)
+                    if re.fullmatch(r"[a-z0-9_]+|[\u3400-\u9fff]{1,2}", term)
+                    and term not in _QUERY_STOP) for option in normalized]
+    selected: list[str] = []
+    size = 0
+    for offset in range(max(map(len, queues), default=0)):
+        for terms in queues:
+            if offset >= len(terms):
+                continue
+            term = terms[offset]
+            if term in selected or size + len(term) > 512:
+                continue
+            selected.append(term)
+            size += len(term)
+            if len(selected) == 16:
+                return tuple(selected)
+    return tuple(selected)
 
 
 def validate_memory_query_options(value: object) -> dict | None:

@@ -1,0 +1,343 @@
+{
+  "schema": "aru-memory-package-inventory-v1",
+  "version": "AMC-ENTRY-1.6",
+  "status": "frozen-candidate",
+  "inventory_method": "explicit whitelist: 54 runtime source files and 13 package materials including this manifest; generated files excluded",
+  "inventory_excludes": [
+    "PACKAGE_MANIFEST.json"
+  ],
+  "file_count": 66,
+  "total_bytes": 955249,
+  "files": [
+    {
+      "path": ".gitignore",
+      "bytes": 549,
+      "sha256": "340625153db37072826af537c5a3e6036ffa66f77be4f4392b0180f1428f36b5"
+    },
+    {
+      "path": "DEPENDENCIES.md",
+      "bytes": 2206,
+      "sha256": "f45b029c7bd6c0d509f010edf73baeb94a480259e8a953c5d1049a312f59164c"
+    },
+    {
+      "path": "LICENSE",
+      "bytes": 1067,
+      "sha256": "215b224bc6ca2792c3f869791f29ffc2356194111894d6aaca16d8f40a5fc311"
+    },
+    {
+      "path": "PREPARATION.md",
+      "bytes": 3853,
+      "sha256": "325f0f025aecd7c70bacd4eef00d31cb1dc488501fed522e30f666c8124d6e53"
+    },
+    {
+      "path": "README.md",
+      "bytes": 9995,
+      "sha256": "54a79dd06eba00976d84eb68ecd0f4c374d91c61cf19e9f9195f48a66725caee"
+    },
+    {
+      "path": "SOURCE_MANIFEST.json",
+      "bytes": 10907,
+      "sha256": "da95722c2682e5f724fed3973506c513c9323426e4613b2e69ea79a379eff759"
+    },
+    {
+      "path": "THIRD_PARTY_NOTICES.md",
+      "bytes": 2645,
+      "sha256": "f7b7280bc6551ac8bba833888df1c44a10e6d260f4bb96561d654adc0ab2ec36"
+    },
+    {
+      "path": "Tools/serve_memory_challenge.py",
+      "bytes": 13185,
+      "sha256": "ce0b0a217ed3bf539181be99bad6f4eac0eb51254ce5dbfbafcad6dbbb1a21cd"
+    },
+    {
+      "path": "VALIDATION.md",
+      "bytes": 8739,
+      "sha256": "932f841c5863adb524f6c633036d4adc28156fabe36b4d33e75368e0b4292c4c"
+    },
+    {
+      "path": "apps/system_memory_god/challenge_admission.py",
+      "bytes": 16422,
+      "sha256": "4ce460546eb1f71d0d0dcdb0a6398a93af2120091da810e0029cb33826c77334"
+    },
+    {
+      "path": "apps/system_memory_god/challenge_api.py",
+      "bytes": 10882,
+      "sha256": "973ad18e6b5da568ab47cee43de461bb42bb6e031e19abf7346bf5d8581fb770"
+    },
+    {
+      "path": "apps/system_memory_god/challenge_lanes.py",
+      "bytes": 4487,
+      "sha256": "5a5898398d8595a261e85e3a5ddb48f6ad088a91b9127ab971ffa9017acb0b2a"
+    },
+    {
+      "path": "apps/system_memory_god/challenge_runtime.py",
+      "bytes": 23402,
+      "sha256": "9ab72aeb66161e3a52c4262e32db0ba227426fba1072ce7f6ea1683c069790cd"
+    },
+    {
+      "path": "apps/system_memory_god/challenge_store.py",
+      "bytes": 6976,
+      "sha256": "571b0c38848bcad50caa5f2ed9086fae20c7e18127678da82b23d7b14f3cbb20"
+    },
+    {
+      "path": "apps/system_memory_god/daily_runtime.py",
+      "bytes": 32309,
+      "sha256": "a3ee5382c6e2a3b5123264228beb512a38ee9b58e743402a7db324dc6d2f1dec"
+    },
+    {
+      "path": "apps/system_memory_god/derivation.py",
+      "bytes": 24201,
+      "sha256": "8ca00ea5c8cd4d9e71f75758e45be7b3950b38014b601864bcaa82cb96efac1b"
+    },
+    {
+      "path": "apps/system_memory_god/grouped_extractor.py",
+      "bytes": 5711,
+      "sha256": "abdfadd5971bce0acbd09c216c4cafdbb61549d12a2c0dec86a7a755aabd4c31"
+    },
+    {
+      "path": "apps/system_memory_god/memory_factory.py",
+      "bytes": 3944,
+      "sha256": "f295808850af36dac26e0d7028988878f75ddd1af82c988cb6b744832c034e96"
+    },
+    {
+      "path": "apps/system_memory_god/memory_service.py",
+      "bytes": 7067,
+      "sha256": "c74d1eaa192c703751df49281ebd3ea3b0fe1d1e8b1ef8ada0f013b0dbed8a36"
+    },
+    {
+      "path": "apps/system_memory_god/models.py",
+      "bytes": 4378,
+      "sha256": "5c6d37370c369d31387b65003489f6d011030ef9e1e51da275b870ebd40b5cce"
+    },
+    {
+      "path": "apps/system_memory_god/storage/__init__.py",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "apps/system_memory_god/storage/daily_embedding_adapter.py",
+      "bytes": 19009,
+      "sha256": "3f4b9afed8973bbc959a88776d1bd12385048c874302c4e6241fde768589ec3c"
+    },
+    {
+      "path": "apps/system_memory_god/storage/daily_snapshot_file_ops.py",
+      "bytes": 24764,
+      "sha256": "12ef197ec8b084654624f1e261dcbfc2a30a2bb11421d1a5ff58ffe97cf55c89"
+    },
+    {
+      "path": "apps/system_memory_god/storage/daily_vector_index.py",
+      "bytes": 24210,
+      "sha256": "ed6671d148391266ae5070a565b55114b29bf7ed29e9a745b0c099c1274a7d02"
+    },
+    {
+      "path": "apps/system_memory_god/storage/daily_vector_snapshot.py",
+      "bytes": 17616,
+      "sha256": "ec98d9bc8496fb0f1ac6bbd4d2397d5230bc4f8391c8ebee739dcc412801f1a8"
+    },
+    {
+      "path": "apps/system_memory_god/storage/daily_vector_snapshot_worker.py",
+      "bytes": 8897,
+      "sha256": "dd3e0d3ed2c50abcae1781490f24a710f79a100bb681d40774ff6bc0b17949d0"
+    },
+    {
+      "path": "apps/system_memory_god/storage/daily_vector_worker.py",
+      "bytes": 11119,
+      "sha256": "635967e0af807158ef8f6ad3f79542034db978fbe669328a16859b79641882dc"
+    },
+    {
+      "path": "apps/system_memory_god/storage/derivation_gate.py",
+      "bytes": 3360,
+      "sha256": "22315408b8ed625a5806f8ae1266b73f0ad0dcfa78c601ce93f5363d5efbef94"
+    },
+    {
+      "path": "apps/system_memory_god/storage/derivation_runs.py",
+      "bytes": 7915,
+      "sha256": "325af80311dbb8e995c9d17593ffc081d951cbd9e4551d8d637c311ac9856373"
+    },
+    {
+      "path": "apps/system_memory_god/storage/derived_evidence.py",
+      "bytes": 14213,
+      "sha256": "ec61eaaf1d7588697c1c059278a63ebd7ca3081c2b7398465b96e4c463085675"
+    },
+    {
+      "path": "apps/system_memory_god/storage/derived_read_view.py",
+      "bytes": 5961,
+      "sha256": "ae197b5e1c45b7170d315230921a75da53e3dc515a0022f4e72cd52074048173"
+    },
+    {
+      "path": "apps/system_memory_god/storage/domain_queries.py",
+      "bytes": 7369,
+      "sha256": "1b10bcc273aaa901882bfbaf4de1247d5b098d5d774f1d4962925097bd41bb6d"
+    },
+    {
+      "path": "apps/system_memory_god/storage/extraction_snapshots.py",
+      "bytes": 5251,
+      "sha256": "ba4af9402835f9c893b2ac7376d408bbd852c5006335a2d3ae5c1754ba36a986"
+    },
+    {
+      "path": "apps/system_memory_god/storage/memory_ledger.py",
+      "bytes": 55313,
+      "sha256": "28bfb0e8a88ce43426f7e38e9ceffbba400a2a9b66ef46cbc080aa233ae3acdf"
+    },
+    {
+      "path": "apps/system_memory_god/storage/partition_registry.py",
+      "bytes": 9133,
+      "sha256": "eaf02372fec3c1e7ebb809a39c154ed45ee65c110784755146967c9a6163c8de"
+    },
+    {
+      "path": "apps/system_memory_god/storage/pipeline_database.py",
+      "bytes": 9012,
+      "sha256": "2f579772ba8025dae730eb33f3043cffb77873c3cf5c797af0dd768e95afe0de"
+    },
+    {
+      "path": "apps/system_memory_god/storage/scoped_stores.py",
+      "bytes": 2714,
+      "sha256": "608206fe2f71f14008f832fc3757481acd1232b94a66fc59a475ee066ff3e545"
+    },
+    {
+      "path": "apps/system_memory_god/storage/shared_embedding_owner.py",
+      "bytes": 41078,
+      "sha256": "85d2c01ef67b2e377f1cafb207743f7a21962bee4ca6406d32a044c7f25d5944"
+    },
+    {
+      "path": "apps/system_memory_god/storage/supervised_daily_vector.py",
+      "bytes": 82037,
+      "sha256": "f83e41057a7e1deca0e5cb7756ce5439eabdba173eb1ca79dcc097e7ad0b8d6b"
+    },
+    {
+      "path": "apps/system_memory_god/storage/supervised_daily_vector_snapshot.py",
+      "bytes": 11506,
+      "sha256": "50d6688d8d25e8889ce257435933f249b72a3fda4467493824d5c04e4f08e38a"
+    },
+    {
+      "path": "apps/system_memory_god/storage/token_chunking.py",
+      "bytes": 4603,
+      "sha256": "88cf04b0f858b234ccc7ee4b41b81e66b83b3ab490bf7da448985dc224bb3190"
+    },
+    {
+      "path": "config/provider.example.json",
+      "bytes": 162,
+      "sha256": "00c1ae574ae23eab71d570d53cdbebea3145fa4c481fc5def3c720e359849fb9"
+    },
+    {
+      "path": "kernel/daily_memory_contracts.py",
+      "bytes": 8849,
+      "sha256": "779fbf603c766e0e12671bd0533d78dd882da4fa3ab264e97c54787d304af1ab"
+    },
+    {
+      "path": "kernel/daily_read_worker.py",
+      "bytes": 16067,
+      "sha256": "2869465ac0aaa29f6b1aee2167c63f13738d8e156159b99572f931c0f53ce452"
+    },
+    {
+      "path": "kernel/feishu_business_text.py",
+      "bytes": 916,
+      "sha256": "9979cdcc6a026086a79fcea56c6ed810b59adc2c613edb145dcba894b96cfe5c"
+    },
+    {
+      "path": "kernel/logger.py",
+      "bytes": 2516,
+      "sha256": "97e387dd11696693e9b4090fd7c360f710d4ddbd53028e20afc5537bb5bc7d79"
+    },
+    {
+      "path": "kernel/memory_pipeline_models.py",
+      "bytes": 2703,
+      "sha256": "7343e8e8c876e10d2d79e430185044143872c454505869d23d61cd37b2f3b6c9"
+    },
+    {
+      "path": "kernel/message.py",
+      "bytes": 21589,
+      "sha256": "f502cfbd4dc6e364744c5e67add64e04a375fa8e1bd12b5bfc968ad6cc663fe9"
+    },
+    {
+      "path": "kernel/project_workspace_io.py",
+      "bytes": 15974,
+      "sha256": "ff137d053e79aef17109e8056232824025dead09765a217732517bbdc81154d1"
+    },
+    {
+      "path": "kernel/raw_message_database.py",
+      "bytes": 13612,
+      "sha256": "87096ba829ec936cf602d027fee54725df191f6fc991783feded1b264a010bf1"
+    },
+    {
+      "path": "kernel/raw_message_models.py",
+      "bytes": 3014,
+      "sha256": "5d52936206963bd77e997f6c589d8ff5cd98a407b5bb5ced9f434dc196b210db"
+    },
+    {
+      "path": "kernel/raw_message_outbox.py",
+      "bytes": 11474,
+      "sha256": "0f861a62c85a71c7f2329a46819c640ef198127bfd04236fc943c21c5df6e45d"
+    },
+    {
+      "path": "kernel/raw_message_profile.py",
+      "bytes": 8637,
+      "sha256": "962d46d4ffe93e5f5143078c21d8aec8fa5bf31823f7c7da40fbb20eded524cd"
+    },
+    {
+      "path": "kernel/raw_message_reader.py",
+      "bytes": 18786,
+      "sha256": "5b48701eab070332b08468a92c1e595ff5c0f638b304ec71a9e5f4349e9fc944"
+    },
+    {
+      "path": "kernel/raw_message_registry.py",
+      "bytes": 5368,
+      "sha256": "0a894ba708e19ded01521ee617bc05a549dc9a900fc7f95bc28208f010de452c"
+    },
+    {
+      "path": "kernel/raw_message_retrieval.py",
+      "bytes": 68368,
+      "sha256": "406e9f3c6b062f9fc6654026b3abd930340870273c3ea8ac8c6aa243238fe00d"
+    },
+    {
+      "path": "kernel/raw_message_schema.py",
+      "bytes": 6320,
+      "sha256": "f4ad22bb2a979ee3e0cbe455d80cf88448047924788eccfb1da3564c38718e8b"
+    },
+    {
+      "path": "kernel/raw_message_service.py",
+      "bytes": 35319,
+      "sha256": "132d0c42774b8d45c09077bfc179a5864dd141a3880500b5dea494304e4c49a5"
+    },
+    {
+      "path": "kernel/raw_message_store.py",
+      "bytes": 81018,
+      "sha256": "38a25324402b71e5f4f1bd5802b0eb60f61adf325d77d361e314357109bdbec3"
+    },
+    {
+      "path": "kernel/raw_message_validation.py",
+      "bytes": 8139,
+      "sha256": "51c520b5d187f9447e1780af7214e759e93a5fe47e2619365fbe283eeb379d66"
+    },
+    {
+      "path": "kernel/raw_message_worker.py",
+      "bytes": 13730,
+      "sha256": "ba8288086c3817b54f4eefba2f994ec5f3ce8fc8430d75ffa7ca160ce9e91d81"
+    },
+    {
+      "path": "kernel/supervised_daily_retrieval.py",
+      "bytes": 44177,
+      "sha256": "c53f604d12c069839e8de248ea5a704aaa31c2c30f3e75c2a89bab24ee4ccd3a"
+    },
+    {
+      "path": "kernel/workspace_events.py",
+      "bytes": 7807,
+      "sha256": "0abcb3841a87d3c9f4fd45dcbb67cde1a1139761709e1a9bb148f7acc19741e9"
+    },
+    {
+      "path": "requirements-dev.txt",
+      "bytes": 84,
+      "sha256": "bfdc178c45db32f17fae9afc138bea12597712f41e92e4af679dadc238d8c9bd"
+    },
+    {
+      "path": "requirements.txt",
+      "bytes": 389,
+      "sha256": "d39899f2ce6d20440f7337a8e429964898edb352f486fae146ee3e5175f5461a"
+    },
+    {
+      "path": "scripts/setup.ps1",
+      "bytes": 2226,
+      "sha256": "00e5e22f20ab0e5ab8c76c7cd9570c0d7ce2a2abc88025ef083913dc85280ebf"
+    }
+  ]
+}

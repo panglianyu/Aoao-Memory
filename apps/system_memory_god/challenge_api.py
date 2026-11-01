@@ -6,16 +6,17 @@ import asyncio
 from contextlib import asynccontextmanager
 import hmac
 import json
-import math
+import time
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from kernel.daily_memory_contracts import MAX_MEMORY_QUERY_CHARS
 from kernel.raw_message_models import ConflictError
+from .challenge_admission import AdmissionClosed, AdmissionFull, BoundedAdmission
 
 
-ENTRY_VERSION = "AMC-ENTRY-1.0"
+ENTRY_VERSION = "AMC-ENTRY-1.6"
 MAX_BODY_BYTES = 2 * 1024 * 1024
 MAX_MESSAGE_CHARS = 81920
 MAX_MESSAGES = 256
@@ -109,8 +110,7 @@ def _add_values(value: dict) -> dict:
                 or not _text(message["content"], MAX_MESSAGE_CHARS)):
             raise ValueError("invalid message")
         stamp = message.get("timestamp")
-        if stamp is not None and (type(stamp) not in {int, float}
-                                  or not 0 <= stamp <= 253402300799999 or not math.isfinite(stamp)):
+        if stamp is not None and (type(stamp) is not int or not 0 <= stamp <= 253402300799999):
             raise ValueError("invalid timestamp")
     return value
 
@@ -123,7 +123,7 @@ def _search_values(value: dict) -> dict:
     if "options" in value and (type(value["options"]) is not list or len(value["options"]) > 256
                                or any(not _text(item, 32768) for item in value["options"])):
         raise ValueError("invalid options")
-    return {key: value[key] for key in ("user_id", "query", "top_k")}
+    return {key: value[key] for key in ("user_id", "query", "top_k", "options") if key in value}
 
 
 def _add_response(result: object, values: dict) -> dict:
@@ -152,17 +152,26 @@ def create_app(runtime, *, token: str) -> FastAPI:
             or any(char.isspace() or ord(char) < 33 or ord(char) > 126 for char in token)):
         raise ValueError("dedicated bearer credential required")
     token_bytes = token.encode("ascii")
-    admission = asyncio.Lock()
+    lane_count = getattr(runtime, "lane_count", 1)
+    if type(lane_count) is not int or lane_count not in {1, 2}:
+        raise ValueError("invalid challenge lane count")
+    admission = BoundedAdmission(runtime.wait_idle, lane_count=lane_count)
+    if lane_count == 2:
+        runtime.bind_admission(admission)
 
     @asynccontextmanager
     async def lifespan(app):
         try:
             yield
         finally:
-            await runtime.close()
+            try:
+                await admission.close()
+            finally:
+                await runtime.close()
 
     app = FastAPI(title="Aoao Memory Challenge", version=ENTRY_VERSION, docs_url=None,
                   redoc_url=None, openapi_url=None, lifespan=lifespan)
+    app.state.admission = admission
 
     def authorized(request: Request) -> bool:
         headers = request.headers.getlist("authorization")
@@ -175,31 +184,64 @@ def create_app(runtime, *, token: str) -> FastAPI:
     async def invoke(request: Request, operation: str) -> JSONResponse:
         if not authorized(request):
             return _error(401, "unauthorized")
-        if admission.locked():
-            return _error(429, "busy")
-        async with admission:
+        ticket = None
+        try:
+            deadline = runtime.request_deadline()
+            ticket = admission.reserve(deadline)
             try:
-                try:
-                    body = await asyncio.wait_for(_body(request), timeout=30)
-                except TimeoutError:
-                    return _error(408, "body_timeout")
+                body = await admission.read_body(
+                    ticket, _body(request), min(30, deadline - time.monotonic()))
+            except (TimeoutError, asyncio.TimeoutError):
+                return _error(408, "body_timeout")
+            values = _add_values(body) if operation == "add" else _search_values(body)
+
+            async def execute(lane_id: int = 0) -> object:
+                selected = runtime.for_lane(lane_id) if lane_count == 2 else runtime
                 if operation == "add":
-                    values = _add_values(body)
-                    result = _add_response(await runtime.add(**values), values)
-                else:
-                    values = _search_values(body)
-                    result = _search_response(await runtime.search(**values), values["top_k"])
-                return JSONResponse(result)
-            except _RequestError as error:
-                return _error(error.status, error.reason)
-            except ConflictError:
-                return _error(409, "request_conflict")
-            except TimeoutError:
-                return _error(504, "publication_deadline")
-            except ValueError:
-                return _error(422, "invalid_request")
-            except Exception:
-                return _error(503, "unavailable")
+                    return _add_response(await selected.add(**values, deadline=deadline), values)
+                return _search_response(await selected.search(**values, deadline=deadline),
+                                        values["top_k"])
+
+            async def disconnected() -> None:
+                while True:
+                    message = await request.receive()
+                    if message["type"] == "http.disconnect":
+                        admission.abandon(ticket)
+                        return
+
+            route_options = {"affinity_key": values["user_id"]} if lane_count == 2 else {}
+            pending = asyncio.create_task(admission.submit(ticket, execute, **route_options))
+            disconnect = asyncio.create_task(disconnected())
+            try:
+                done, _ = await asyncio.wait((pending, disconnect),
+                                              return_when=asyncio.FIRST_COMPLETED)
+                if disconnect in done:
+                    disconnect.result()
+                    raise _RequestError(408, "client_disconnected")
+                return JSONResponse(pending.result())
+            finally:
+                # This only abandons unstarted work. The dispatcher owns running work.
+                admission.abandon(ticket)
+                pending.cancel()
+                disconnect.cancel()
+                await asyncio.gather(pending, disconnect, return_exceptions=True)
+        except AdmissionFull:
+            return _error(429, "busy")
+        except AdmissionClosed:
+            return _error(503, "unavailable")
+        except _RequestError as error:
+            return _error(error.status, error.reason)
+        except ConflictError:
+            return _error(409, "request_conflict")
+        except (TimeoutError, asyncio.TimeoutError):
+            return _error(504, "publication_deadline")
+        except ValueError:
+            return _error(422, "invalid_request")
+        except Exception:
+            return _error(503, "unavailable")
+        finally:
+            if ticket is not None:
+                admission.abandon(ticket)
 
     @app.post("/add")
     async def add(request: Request):
@@ -214,6 +256,8 @@ def create_app(runtime, *, token: str) -> FastAPI:
         try:
             value = runtime.health()
             state = value.get("state") if type(value) is dict else None
+            if admission.closing and state == "ready":
+                state = "closing"
         except Exception:
             state = None
         if type(state) is not str or state not in {"ready", "unavailable", "closing", "stopped"}:

@@ -20,12 +20,29 @@ from .derivation import DailyDerivation, Extractor, _RecoveryGenerationChanged, 
 from .storage.scoped_stores import ScopedStores
 from .storage.daily_vector_index import MAX_DAILY_VECTOR_PARTITIONS
 from .storage.supervised_daily_vector import SupervisedDailyVector
+from .storage.daily_vector_worker import _validate_shared_embedding
+
+
+def _shared_options(profile, embedding, semantic_mode, clients, deadline_ns) -> dict:
+    if clients is None and deadline_ns is None:
+        return {}
+    if profile.formal_embedding is not None:
+        raise ValueError("formal and shared embedding cannot be combined")
+    if (type(clients) is not dict or set(clients) != {"writer", "query"}
+            or clients["writer"] is clients["query"] or semantic_mode != "snapshot"):
+        raise ValueError("explicit distinct shared embedding roles required")
+    for client in clients.values():
+        _validate_shared_embedding(embedding, None, client, deadline_ns)
+    return clients
 
 
 class DailyMemoryRuntime:
     def __init__(self, raw: RawMessageService, profile: RawMessageProfile, bus, *,
                  extractor: Extractor, embedding: str, semantic_mode: str = "disabled",
-                 semantic_diagnostics: bool = False):
+                 semantic_diagnostics: bool = False, embedding_clients=None,
+                 embedding_deadline_ns=None):
+        shared_clients = _shared_options(profile, embedding, semantic_mode,
+                                         embedding_clients, embedding_deadline_ns)
         if raw.profile is not profile or profile.derived_root is None:
             raise ValueError("explicit matching daily profile required")
         if bus.raw_messages is not raw:
@@ -47,7 +64,9 @@ class DailyMemoryRuntime:
         self.vector = SupervisedDailyVector(
             self.stores, embedding=embedding,
             request_timeout=30 if embedding == "bge-m3" else 10,
-            enable_snapshot=semantic_mode == "snapshot", **formal_options)
+            enable_snapshot=semantic_mode == "snapshot", **formal_options,
+            **({"embedding_client": shared_clients["writer"],
+                "embedding_deadline_ns": embedding_deadline_ns} if shared_clients else {}))
         self.derivation = DailyDerivation(self.stores, extractor, self.vector)
         self.semantic_mode = semantic_mode
         self._startup_enabled = semantic_diagnostics
@@ -70,7 +89,9 @@ class DailyMemoryRuntime:
                 partitions, embedding=embedding,
                 **({"binding_sha256": profile.formal_embedding.binding_sha256} if profile.formal_embedding is not None else {}))
             self.snapshot_reader = SupervisedDailyVectorSnapshot(
-                self.snapshot_cache, diagnostics=semantic_diagnostics, **formal_options)
+                self.snapshot_cache, diagnostics=semantic_diagnostics, **formal_options,
+                **({"embedding_client": shared_clients["query"],
+                    "embedding_deadline_ns": embedding_deadline_ns} if shared_clients else {}))
         raw_only = semantic_mode == "disabled"
         self.retrieval = SupervisedDailyRetrieval(
             raw.store, self.stores,
@@ -94,6 +115,12 @@ class DailyMemoryRuntime:
         self._semantic_failed: set[PipelineScope] = set()
         self._semantic_publications: dict[PipelineScope, tuple[int, str, int]] = {}
         self._semantic_metadata: set[asyncio.Task] = set()
+
+    def set_embedding_deadline(self, deadline_ns: int) -> None:
+        """Forward the already registered operation deadline without starting IO."""
+        self.vector.set_embedding_deadline(deadline_ns)
+        if self.snapshot_reader is not None:
+            self.snapshot_reader.set_embedding_deadline(deadline_ns)
 
     def startup_diagnostic(self) -> dict:
         """Opt-in bounded startup facts; never include source identifiers or text."""

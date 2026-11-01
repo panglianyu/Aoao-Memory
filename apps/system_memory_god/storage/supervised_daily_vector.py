@@ -19,7 +19,7 @@ import time
 
 from kernel.memory_pipeline_models import PipelineScope, identity
 from kernel.daily_memory_contracts import SNAPSHOT_QUERY_TIMEOUT, INTERACTIVE_RECALL_TIMEOUT, RecallPurpose
-from .daily_vector_worker import MAX_FRAME_BYTES, serve
+from .daily_vector_worker import MAX_FRAME_BYTES, _embedding_deadline, _validate_shared_embedding, serve
 from .scoped_stores import ScopedStores
 
 
@@ -93,7 +93,8 @@ class SupervisedDailyVector:
     def __init__(self, stores: ScopedStores, *, embedding: str,
                  request_timeout: float = 10.0, max_pending: int = 16,
                  enable_snapshot: bool = False, process_role: str = "writer", diagnostics: bool = False,
-                 formal_embedding=None):
+                 formal_embedding=None, embedding_client=None, embedding_deadline_ns=None):
+        _validate_shared_embedding(embedding, formal_embedding, embedding_client, embedding_deadline_ns)
         if formal_embedding is not None:
             from kernel.raw_message_profile import FormalEmbeddingBinding
 
@@ -119,6 +120,9 @@ class SupervisedDailyVector:
         self.process_role = process_role
         self.diagnostics = diagnostics
         self.formal_embedding = formal_embedding
+        self.embedding_client = embedding_client
+        self._embedding_deadline_ns = embedding_deadline_ns
+        self._shared_attempted = False
         self._formal_attempted = False
         self._formal_state = "not_started"
         self._formal_actual = None
@@ -172,6 +176,25 @@ class SupervisedDailyVector:
     def worker_pid(self) -> int | None:
         process = self._process
         return process.pid if process is not None else None
+
+    def set_embedding_deadline(self, deadline_ns: int) -> None:
+        _validate_shared_embedding(self.embedding, self.formal_embedding,
+                                   self.embedding_client, deadline_ns)
+        # Called by the async request owner: worker-held locks must reject this
+        # update immediately, rather than stalling the event loop at handoff.
+        if not self._lifecycle.acquire(blocking=False):
+            raise RuntimeError("shared embedding lifecycle still owned")
+        try:
+            if not self._pending_guard.acquire(blocking=False):
+                raise RuntimeError("shared embedding command state still owned")
+            try:
+                if self._closed or self._pending or self._active_request is not None:
+                    raise RuntimeError("shared embedding command still owned")
+                self._embedding_deadline_ns = deadline_ns
+            finally:
+                self._pending_guard.release()
+        finally:
+            self._lifecycle.release()
 
     def formal_health(self) -> dict:
         # Health must not wait behind a slow worker startup holding the lifecycle lock.
@@ -296,6 +319,8 @@ class SupervisedDailyVector:
             return
         if self.formal_embedding is not None and self._formal_attempted:
             raise RuntimeError("formal worker startup already attempted")
+        if self.embedding_client is not None and self._shared_attempted:
+            raise RuntimeError("shared embedding worker startup already attempted")
         self._startup_began = time.monotonic()
         self._startup_note("spawn")
         context = multiprocessing.get_context("spawn")
@@ -307,9 +332,16 @@ class SupervisedDailyVector:
         args: tuple = (child, str(self.stores.root), self.embedding)
         if self.process_role == "snapshot" and self.diagnostics:
             args += (True,)
-        process = (context.Process(target=entry, args=args, kwargs={"formal_embedding": self.formal_embedding.as_payload()})
-                   if self.formal_embedding is not None else context.Process(target=entry, args=args))
+        worker_options = ({"formal_embedding": self.formal_embedding.as_payload()}
+                          if self.formal_embedding is not None else {})
+        if self.embedding_client is not None:
+            worker_options.update(embedding_client=self.embedding_client,
+                                  embedding_deadline_ns=self._embedding_deadline_ns)
+        process = (context.Process(target=entry, args=args, kwargs=worker_options)
+                   if worker_options else context.Process(target=entry, args=args))
         try:
+            if self.embedding_client is not None:
+                self._shared_attempted = True
             if self.formal_embedding is not None:
                 with self._formal_facts:
                     self._formal_attempted = True
@@ -323,10 +355,18 @@ class SupervisedDailyVector:
             self._startup_note("failed", "spawn_failed", exc)
             parent.close()
             child.close()
+            if self.embedding_client is not None:
+                self.embedding_client.close_parent_copy()
             raise
         child.close()
         self._connection = parent
         self._process = process
+        if self.embedding_client is not None:
+            try:
+                self.embedding_client.close_parent_copy()
+            except BaseException:
+                self._stop()
+                raise
         self._startup_note("waiting_ready")
         failure_code = "handshake_error"
         try:
@@ -697,6 +737,11 @@ class SupervisedDailyVector:
         clock = time.monotonic
         deadline = (_query.deadline if _query is not None else _deadline if _deadline is not None else clock() + (
             60 if self.process_role == "snapshot" and operation == "warm_snapshot" else self.request_timeout))
+        embedding_deadline_ns = self._embedding_deadline_ns
+        if self.embedding_client is not None:
+            if _embedding_deadline(embedding_deadline_ns) <= time.monotonic_ns():
+                raise TimeoutError("shared embedding operation deadline exceeded")
+            deadline = min(deadline, embedding_deadline_ns / 1_000_000_000)
         queued = _query.began if _query is not None else clock()
         with self._acquire(cancel_event, deadline, _query):
             if _diagnostic is not None:
@@ -723,6 +768,8 @@ class SupervisedDailyVector:
             self._request_id += 1
             request = {"version": 1, "id": self._request_id,
                        "op": operation, "scope": scope.key, **arguments}
+            if self.embedding_client is not None:
+                request["embedding_deadline_ns"] = embedding_deadline_ns
             data = json.dumps(request, ensure_ascii=True, separators=(",", ":"),
                               allow_nan=False).encode()
             if len(data) > MAX_FRAME_BYTES:
