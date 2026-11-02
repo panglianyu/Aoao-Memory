@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-ENTRY_VERSION = "AMC-ENTRY-1.6"
+ENTRY_VERSION = "AMC-ENTRY-1.8"
 _STORAGE_MARKER_VERSION = "AMC-ENTRY-1.0"
 _MARKER = ".amc-entry-v1"
 _LEASE_FILE = ".amc-entry.lock"

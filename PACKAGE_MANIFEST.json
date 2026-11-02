@@ -1,13 +1,13 @@
 {
   "schema": "aru-memory-package-inventory-v1",
   "version": "AMC-ENTRY-1.8",
-  "status": "recall-patch-validated-not-deployed",
-  "inventory_method": "Explicit prior 72-file public whitelist plus PATCH18.md and metadata-only validation-patch18.json; source path selection unchanged. No runtime directory copied.",
+  "status": "deployed-small-http-fixture-validated",
+  "inventory_method": "Explicit preceding 74-file public whitelist plus metadata-only validation-deployment18.json. Same 57 source paths; only CLI/API displayed version literals change. No runtime data, endpoint, credential, process ID, log, model weight, or private history is included.",
   "inventory_excludes": [
     "PACKAGE_MANIFEST.json"
   ],
-  "file_count": 73,
-  "total_bytes": 1047257,
+  "file_count": 74,
+  "total_bytes": 1054159,
   "files": [
     {
       "path": ".gitignore",
@@ -31,23 +31,23 @@
     },
     {
       "path": "PATCH18.md",
-      "bytes": 3614,
-      "sha256": "d0e495f5e5e8aebb7628b5ba57cbefd92a81d0783516b2e6eb0c139f102903a0"
+      "bytes": 5169,
+      "sha256": "4a9ec8a76581ebc595132cf0d8e8e21763290f49554b9641b32ee347a2f68d5b"
     },
     {
       "path": "PREPARATION.md",
-      "bytes": 4397,
-      "sha256": "43207e5af97f31b23f961b2b5f77797dac50f865107df882449296015dac4bb8"
+      "bytes": 5944,
+      "sha256": "3f909cedce9b17d64fa3541b07b54c414479ddbbd2d3f9745d2a70027c5761f5"
     },
     {
       "path": "README.md",
-      "bytes": 12892,
-      "sha256": "fd548534c83fe8630369efb717256b4c2dc0b65c45546b937b26265e78cc9c19"
+      "bytes": 15131,
+      "sha256": "fc7e45fccfbf4dbf5e6ecc295565e94b82637f1041df0a681ddfec7d544e8f7a"
     },
     {
       "path": "SOURCE_MANIFEST.json",
-      "bytes": 10754,
-      "sha256": "5f36f0830e66ba2077df541e2e27a0b092ad53fa16067b4e7c2a38679005e431"
+      "bytes": 10815,
+      "sha256": "e7a1443bd87403640c58b517966aab85623bdc82b323d7c1016cd78658f713b5"
     },
     {
       "path": "THIRD_PARTY_NOTICES.md",
@@ -57,7 +57,7 @@
     {
       "path": "Tools/serve_memory_challenge.py",
       "bytes": 13506,
-      "sha256": "bc9528db6153ad062e36bfbd9ff12069edd26dcd3b8617b1dcd96620c540d1c7"
+      "sha256": "accf4d3c5119abaecc00a0b041109f803446fc43d3544af91aa92c1f8f48fe24"
     },
     {
       "path": "Tools/validate_memory_challenge_batch_job.py",
@@ -77,7 +77,7 @@
     {
       "path": "apps/system_memory_god/challenge_api.py",
       "bytes": 11150,
-      "sha256": "e8a54225b3c63d23a888f4a33b3e8c47b3198b903172e4b1d0c96a9e7aa1b80f"
+      "sha256": "dddec07119dfde53af7c4c001a1f0afabb0f6b90787551b1531dded9be61ea9e"
     },
     {
       "path": "apps/system_memory_god/challenge_job_store.py",
@@ -363,6 +363,11 @@
       "path": "scripts/setup.ps1",
       "bytes": 2226,
       "sha256": "00e5e22f20ab0e5ab8c76c7cd9570c0d7ce2a2abc88025ef083913dc85280ebf"
+    },
+    {
+      "path": "validation-deployment18.json",
+      "bytes": 1500,
+      "sha256": "2eb457ddcddef6b94acdb544ea437d6e22ef2d2ae495206c6c89741f74384e9f"
     },
     {
       "path": "validation-job17.json",

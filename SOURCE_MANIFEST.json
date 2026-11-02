@@ -1,21 +1,21 @@
 {
   "schema": "aru-memory-source-manifest-v2",
   "version": "AMC-ENTRY-1.8",
-  "status": "recall-patch-validated-not-deployed",
+  "status": "deployed-small-http-fixture-validated",
   "source_count": 57,
   "source_bytes": 988830,
   "runtime_source_count": 56,
   "validation_driver_count": 1,
   "http_entrypoint": "Tools/serve_memory_challenge.py",
-  "http_protocol_version": "AMC-ENTRY-1.6",
+  "http_protocol_version": "AMC-ENTRY-1.8",
   "internal_job_validation_entrypoint": "Tools/validate_memory_challenge_batch_job.py",
-  "selection": "Same explicit 57-source whitelist as 1.7. Only query-term selection and windowed journal/schedule recall change; all published source bytes equal candidate-1.8. This is separate from private tests and historical real-model validation.",
+  "selection": "Same explicit 57-source whitelist as the preceding 1.8 package. Only the CLI and API displayed version literals change from 1.6 to 1.8; all published source bytes equal the isolated deployed 1.8 tree. The small public HTTP fixture does not prove long-request support or official Full capacity.",
   "official_evaluation_claimed": false,
   "files": [
     {
       "path": "Tools/serve_memory_challenge.py",
       "bytes": 13506,
-      "sha256": "bc9528db6153ad062e36bfbd9ff12069edd26dcd3b8617b1dcd96620c540d1c7"
+      "sha256": "accf4d3c5119abaecc00a0b041109f803446fc43d3544af91aa92c1f8f48fe24"
     },
     {
       "path": "Tools/validate_memory_challenge_batch_job.py",
@@ -30,7 +30,7 @@
     {
       "path": "apps/system_memory_god/challenge_api.py",
       "bytes": 11150,
-      "sha256": "e8a54225b3c63d23a888f4a33b3e8c47b3198b903172e4b1d0c96a9e7aa1b80f"
+      "sha256": "dddec07119dfde53af7c4c001a1f0afabb0f6b90787551b1531dded9be61ea9e"
     },
     {
       "path": "apps/system_memory_god/challenge_job_store.py",

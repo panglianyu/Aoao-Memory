@@ -1,0 +1,38 @@
+{
+  "schema": "aru-memory-deployment-http-check-v1",
+  "version": "AMC-ENTRY-1.8",
+  "status": "deployed-small-http-fixture-validated",
+  "started_at_utc": "2026-11-02T12:53:14.6682879Z",
+  "finished_at_utc": "2026-11-02T12:54:05.4892212Z",
+  "independent_service_deployed": true,
+  "publicly_reachable_at_check": true,
+  "health": {"http_status": 200, "version": "AMC-ENTRY-1.8"},
+  "missing_authentication": {"http_status": 401},
+  "empty_scope_search": {"http_status": 200, "result_count": 0},
+  "add": {
+    "synthetic_message_count": 2,
+    "characters_per_message": 164,
+    "http_status": 200,
+    "seconds": 41.334,
+    "exact_ids_echoed": true
+  },
+  "search_checks": [
+    {"marker_position": "first", "http_status": 200, "seconds": 1.751, "marker_found": true},
+    {"marker_position": "last", "http_status": 200, "seconds": 1.929, "marker_found": true}
+  ],
+  "separate_ingress_diagnostic": {
+    "configured_response_delay_seconds": 140,
+    "http_status": 502,
+    "long_request_support_proved": false
+  },
+  "configured_request_timeout_seconds": 1700,
+  "official_documented_maximum_request_seconds": 1800,
+  "free_hostname_may_change_after_several_hours": true,
+  "new_version_binding_at_snapshot": "pending",
+  "official_smoke_started": false,
+  "official_full_started": false,
+  "twenty_message_public_batch_proved": false,
+  "full_readiness_claimed": false,
+  "original_service_and_data_preserved": true,
+  "contains_endpoints_credentials_process_ids_or_original_content": false
+}
