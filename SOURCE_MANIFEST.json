@@ -1,15 +1,15 @@
 {
   "schema": "aru-memory-source-manifest-v2",
-  "version": "AMC-ENTRY-1.7",
-  "status": "internal-job-validated-not-deployed",
+  "version": "AMC-ENTRY-1.8",
+  "status": "recall-patch-validated-not-deployed",
   "source_count": 57,
-  "source_bytes": 986501,
+  "source_bytes": 988830,
   "runtime_source_count": 56,
   "validation_driver_count": 1,
   "http_entrypoint": "Tools/serve_memory_challenge.py",
   "http_protocol_version": "AMC-ENTRY-1.6",
   "internal_job_validation_entrypoint": "Tools/validate_memory_challenge_batch_job.py",
-  "selection": "Prior explicit 54-file runtime whitelist plus two durable-job modules and one bounded validation driver. Every listed source is byte-equal to frozen candidate-1.7. This inventory is not the larger private 193-source validation digest.",
+  "selection": "Same explicit 57-source whitelist as 1.7. Only query-term selection and windowed journal/schedule recall change; all published source bytes equal candidate-1.8. This is separate from private tests and historical real-model validation.",
   "official_evaluation_claimed": false,
   "files": [
     {
@@ -144,8 +144,8 @@
     },
     {
       "path": "apps/system_memory_god/storage/domain_queries.py",
-      "bytes": 7502,
-      "sha256": "77077ef88da6abce9318f18e2f3557ab904c00727623eb6e4b2915888e5bbf59"
+      "bytes": 9157,
+      "sha256": "5dec6463ead8cb58a353ad2a3aa77251f1b5fc044e81850e4d0cf6c206c971bc"
     },
     {
       "path": "apps/system_memory_god/storage/extraction_snapshots.py",
@@ -194,8 +194,8 @@
     },
     {
       "path": "kernel/daily_memory_contracts.py",
-      "bytes": 9044,
-      "sha256": "015016108eb5366b7fe3b43b972064ad149f4986926f6c81e537b999113732c3"
+      "bytes": 9718,
+      "sha256": "cfa59710905641f55ada48b324a353360b7bc82baed01af39579b231ac49d999"
     },
     {
       "path": "kernel/daily_read_worker.py",

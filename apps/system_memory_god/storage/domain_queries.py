@@ -7,6 +7,53 @@ import time
 from kernel.daily_memory_contracts import memory_query_terms as query_terms
 
 DOMAINS = ("vector", "entity", "graph", "rule", "journal", "schedule")
+_EVENT_PAGE_SIZE = 64
+_EVENT_SCAN_LIMIT = 2048
+
+
+def _check_event_deadline(deadline):
+    if deadline is not None and time.monotonic() >= deadline:
+        raise ValueError("domain query deadline exceeded")
+
+
+def _event_window_rows(db, domain, match, terms, limit, deadline,
+                       event_start_ts, event_end_ts, timings):
+    selected = []
+    scanned = 0
+    after = ""
+    field = "occurred_at" if domain == "journal" else "scheduled_at"
+    while scanned < _EVENT_SCAN_LIMIT:
+        _check_event_deadline(deadline)
+        page_size = min(_EVENT_PAGE_SIZE, _EVENT_SCAN_LIMIT - scanned)
+        rows = db.execute("SELECT d.memory_id,d.payload_json FROM derived_evidence d "
+            "JOIN evidence_search e ON d.memory_id=e.memory_id WHERE d.domain=? "
+            "AND d.memory_id>? AND (" + match + ") ORDER BY d.memory_id LIMIT ?",
+            (domain, after, *terms, page_size)).fetchall()
+        for memory_id, encoded in rows:
+            _check_event_deadline(deadline)
+            scanned += 1
+            after = memory_id
+            payload = json.loads(encoded)
+            stamp = payload.get(field)
+            if stamp is None:
+                continue
+            value = datetime.fromisoformat(stamp).timestamp()
+            if (event_start_ts is not None and value < event_start_ts
+                    or event_end_ts is not None and value >= event_end_ts):
+                continue
+            selected.append((memory_id, payload))
+            if len(selected) > limit:
+                _check_event_deadline(deadline)
+                if timings is not None:
+                    timings[domain + "_limited"] = True
+                return selected[:limit]
+        _check_event_deadline(deadline)
+        if len(rows) < page_size:
+            return selected
+    # A full final page does not prove exhaustion, even at the exact scan cap.
+    if timings is not None:
+        timings[domain + "_limited"] = True
+    return selected
 
 
 def _has_uncovered_entity_versions(db, pairs, covered, deadline) -> bool:
@@ -44,24 +91,16 @@ def query_domain_ids(db, query: str, *, domains: tuple[str, ...], limit=100,
             # Payload JSON uses canonical ASCII escapes; search_text contains the
             # actual original language. Bound scans via SQLite progress handler.
             match = " OR ".join("instr(lower(e.search_text),?)>0" for _ in terms)
-            rows = db.execute("SELECT d.memory_id,d.payload_json FROM derived_evidence d "
-                "JOIN evidence_search e ON d.memory_id=e.memory_id WHERE d.domain=? AND ("
-                + match + ") ORDER BY d.memory_id LIMIT ?", (domain, *terms, limit + 1)).fetchall()
-            if len(rows) > limit and timings is not None:
-                timings[domain + "_limited"] = True
-            rows = rows[:limit]
-            selected = []
-            for memory_id, encoded in rows:
-                payload = json.loads(encoded)
-                if domain in {"journal", "schedule"} and (event_start_ts is not None or event_end_ts is not None):
-                    stamp = payload.get("occurred_at" if domain == "journal" else "scheduled_at")
-                    if stamp is None:
-                        continue
-                    value = datetime.fromisoformat(stamp).timestamp()
-                    if (event_start_ts is not None and value < event_start_ts
-                            or event_end_ts is not None and value >= event_end_ts):
-                        continue
-                selected.append((memory_id, payload))
+            if domain in {"journal", "schedule"} and (event_start_ts is not None or event_end_ts is not None):
+                selected = _event_window_rows(db, domain, match, terms, limit, deadline,
+                    event_start_ts, event_end_ts, timings)
+            else:
+                rows = db.execute("SELECT d.memory_id,d.payload_json FROM derived_evidence d "
+                    "JOIN evidence_search e ON d.memory_id=e.memory_id WHERE d.domain=? AND ("
+                    + match + ") ORDER BY d.memory_id LIMIT ?", (domain, *terms, limit + 1)).fetchall()
+                if len(rows) > limit and timings is not None:
+                    timings[domain + "_limited"] = True
+                selected = [(memory_id, json.loads(encoded)) for memory_id, encoded in rows[:limit]]
             if domain == "entity":
                 pairs = tuple(dict.fromkeys((p["subject"], p["attribute"]) for _, p in selected))
                 if len(pairs) > 5:

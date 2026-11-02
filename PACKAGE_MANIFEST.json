@@ -1,13 +1,13 @@
 {
   "schema": "aru-memory-package-inventory-v1",
-  "version": "AMC-ENTRY-1.7",
-  "status": "internal-job-validated-not-deployed",
-  "inventory_method": "Explicit prior 66-path whitelist plus five named additions: two job modules, one validation driver, JOB17.md, and exact metadata-only validation report. 57 sources and 15 package materials including this manifest; generated files excluded.",
+  "version": "AMC-ENTRY-1.8",
+  "status": "recall-patch-validated-not-deployed",
+  "inventory_method": "Explicit prior 72-file public whitelist plus PATCH18.md and metadata-only validation-patch18.json; source path selection unchanged. No runtime directory copied.",
   "inventory_excludes": [
     "PACKAGE_MANIFEST.json"
   ],
-  "file_count": 71,
-  "total_bytes": 1036447,
+  "file_count": 73,
+  "total_bytes": 1047257,
   "files": [
     {
       "path": ".gitignore",
@@ -30,19 +30,24 @@
       "sha256": "215b224bc6ca2792c3f869791f29ffc2356194111894d6aaca16d8f40a5fc311"
     },
     {
+      "path": "PATCH18.md",
+      "bytes": 3614,
+      "sha256": "d0e495f5e5e8aebb7628b5ba57cbefd92a81d0783516b2e6eb0c139f102903a0"
+    },
+    {
       "path": "PREPARATION.md",
-      "bytes": 2354,
-      "sha256": "6770333b92a38d9caf5b1e8124ed99836459d047c956ad3bcfff1feb49d33d71"
+      "bytes": 4397,
+      "sha256": "43207e5af97f31b23f961b2b5f77797dac50f865107df882449296015dac4bb8"
     },
     {
       "path": "README.md",
-      "bytes": 10956,
-      "sha256": "16fe3b5272029889c73f3685a23779798c59fb665691fcc32ea37f44ed0c28da"
+      "bytes": 12892,
+      "sha256": "fd548534c83fe8630369efb717256b4c2dc0b65c45546b937b26265e78cc9c19"
     },
     {
       "path": "SOURCE_MANIFEST.json",
       "bytes": 10754,
-      "sha256": "65b8a7f02aab6d1a666c30e1d4c6bd8cb3ed8a25aeca4a8c5cc11810fbebf5b0"
+      "sha256": "5f36f0830e66ba2077df541e2e27a0b092ad53fa16067b4e7c2a38679005e431"
     },
     {
       "path": "THIRD_PARTY_NOTICES.md",
@@ -186,8 +191,8 @@
     },
     {
       "path": "apps/system_memory_god/storage/domain_queries.py",
-      "bytes": 7502,
-      "sha256": "77077ef88da6abce9318f18e2f3557ab904c00727623eb6e4b2915888e5bbf59"
+      "bytes": 9157,
+      "sha256": "5dec6463ead8cb58a353ad2a3aa77251f1b5fc044e81850e4d0cf6c206c971bc"
     },
     {
       "path": "apps/system_memory_god/storage/extraction_snapshots.py",
@@ -241,8 +246,8 @@
     },
     {
       "path": "kernel/daily_memory_contracts.py",
-      "bytes": 9044,
-      "sha256": "015016108eb5366b7fe3b43b972064ad149f4986926f6c81e537b999113732c3"
+      "bytes": 9718,
+      "sha256": "cfa59710905641f55ada48b324a353360b7bc82baed01af39579b231ac49d999"
     },
     {
       "path": "kernel/daily_read_worker.py",
@@ -363,6 +368,11 @@
       "path": "validation-job17.json",
       "bytes": 2223,
       "sha256": "ae3ca693deb3fdc6792d6e40945fbb21357081948015ba6bfc23c5374c539c68"
+    },
+    {
+      "path": "validation-patch18.json",
+      "bytes": 888,
+      "sha256": "2ec1505e123abe8fda05ec6bbe5cb56fb63272cdc0a4d7719797eee10b1b5f36"
     }
   ]
 }

@@ -1,0 +1,20 @@
+{
+  "schema": "aru-memory-bounded-recall-patch-result-v1",
+  "version": "AMC-ENTRY-1.8",
+  "status": "recall-patch-validated-not-deployed",
+  "shared_kernel_tests": {"passed": 58, "failed": 0, "seconds": 9.38},
+  "candidate_hint_tests": {"passed": 25, "failed": 0, "seconds": 9.74},
+  "final_original_example_and_affected_phrases": {"passed": 7, "failed": 0, "seconds": 0.31},
+  "distinct_related_cases_covered": 84,
+  "ruff": "passed-four-changed-python-files",
+  "mypy": "passed-two-implementations-with-explicit-package-bases",
+  "independent_python_review": "no-blocking-findings",
+  "event_page_size": 64,
+  "event_matching_row_scan_limit_per_domain": 2048,
+  "maximum_literal_query_terms": 8,
+  "existing_raw_plus_six_domains_reused": true,
+  "new_model_calls": 0,
+  "official_full_started": false,
+  "public_endpoint_deployed": false,
+  "tests_are_from_distinct_checkouts": true
+}

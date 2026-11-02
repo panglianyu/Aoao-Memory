@@ -86,20 +86,32 @@ class DailyRecallOutcome:
 MEMORY_DOMAINS = ("raw", "vector", "entity", "graph", "rule", "journal", "schedule")
 MAX_MEMORY_QUERY_CHARS = 32768
 _QUERY_STOP = frozenset("a an the is are was were be who which what when where how does do did of to in on at for with and or my me please tell prefer".split())
+_QUERY_REQUEST_PHRASES = (
+    "能不能帮我回忆一下", "麻烦帮我回忆一下", "请帮我回忆一下", "帮我回忆一下",
+    "我们聊过的关于",
+    "能不能帮我查一下", "请告诉我", "请问一下", "麻烦帮我", "你还记得",
+    "能不能帮我", "帮我查一下", "帮我找一下", "帮我看一下", "我想问一下", "请帮我", "请问",
+)
 
 
 def memory_query_terms(query: str) -> tuple[str, ...]:
-    """At most eight literal terms; never an FTS/SQL expression."""
+    """At most eight literal terms spread across the query; never an FTS/SQL expression."""
     if type(query) is not str or not query.strip() or len(query) > MAX_MEMORY_QUERY_CHARS:
         raise ValueError("invalid domain query")
+    text = query.lower()
+    for phrase in _QUERY_REQUEST_PHRASES:
+        text = text.replace(phrase, " ")
     terms = []
-    for token in re.findall(r"[a-zA-Z0-9_]+|[\u3400-\u9fff]+", query.lower()):
+    for token in re.findall(r"[a-zA-Z0-9_]+|[\u3400-\u9fff]+", text):
         if token in _QUERY_STOP:
             continue
         parts = [token] if not re.search(r"[\u3400-\u9fff]", token) or len(token) <= 2 else [
             token[i:i + 2] for i in range(len(token) - 1)]
         terms.extend(parts)
-    return tuple(dict.fromkeys(terms))[:8] or (query.strip().lower(),)
+    unique_terms = tuple(dict.fromkeys(terms))
+    if len(unique_terms) > 8:
+        return tuple(unique_terms[index * (len(unique_terms) - 1) // 7] for index in range(8))
+    return unique_terms or (query.strip().lower(),)
 
 
 def validate_retrieval_hints(value: object) -> tuple[str, ...]:
