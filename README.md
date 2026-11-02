@@ -1,16 +1,18 @@
 # aru memory
 
-A Windows Add/Search service built from the independent Aoao Memory source tree. This 1.6 candidate branch contains the selected runtime and packaging materials. It excludes the Aoao OS host assistant, tests, private configuration, runtime data, model weights, and private Aoao OS Git history.
+A Windows memory service built from the independent Aoao Memory source tree. This 1.7 candidate package adds an internal durable Add-job core and its bounded validation driver to the selected runtime. It excludes the Aoao OS host assistant, tests, private configuration, runtime data, model weights, and private Aoao OS Git history.
 
 ## Candidate status
 
-The selected runtime source matches the frozen 1.6 implementation and its one passing bounded local real-model gate. It remains a candidate branch. The accepted online version is still 1.0, and there is no official Full result for this candidate. Source publication alone does not approve a version change or change the Commercial Products (Industry) division.
+The 1.7 internal job core passed one bounded local real-model check: one Add containing twenty messages reached durable SUCCEEDED after 279.593 seconds, all 120 derivations succeeded, and two subsequent Search checks found the first and last message markers. Receipt acceptance took 0.015 seconds; acceptance is not ingestion success. See [JOB17.md](JOB17.md) and the exact metadata-only [validation-job17.json](validation-job17.json).
+
+**1.7 is not deployed and is not Full-ready.** The included HTTP CLI and Add/Search routes retain the 1.6 synchronous protocol and a 100-second request budget. No HTTP 202 job adapter or official job-status schema has been implemented. The organizer's complete asynchronous status/poll contract and version acceptance remain unresolved. A local 1700-second job result does not show that the synchronous 100-second HTTP Add can complete the same batch.
 
 The accepted deployment remains AMC-ENTRY-1.0 at fixed commit [e5d5251269d47b27b006aa12df728897591bc90a](https://github.com/panglianyu/Aoao-Memory/commit/e5d5251269d47b27b006aa12df728897591bc90a). Do not use a submitted service's active data root for this candidate. This package makes no claim of passed official Smoke, completed Full, leaderboard score, or proven Full capacity.
 
-SOURCE_MANIFEST.json identifies the 54 copied runtime source files. PACKAGE_MANIFEST.json inventories an explicit whitelist of 54 source files and twelve other package materials, excluding itself. Runtime-generated caches and logs are outside that inventory. VALIDATION.md separates inherited failures, current local evidence, and pending checks. PREPARATION.md describes sanitization coverage and remaining gaps.
+SOURCE_MANIFEST.json identifies 57 copied Python files: the prior explicit 54-file runtime closure, two job modules, and one validation driver. Every source file is copied byte-for-byte from the frozen 1.7 candidate, including its actual line endings. PACKAGE_MANIFEST.json inventories an explicit whitelist and excludes itself to avoid self-hashing. The 193-source before/after digest in the real validation report describes the larger private validation tree, not this 57-file publication closure. VALIDATION.md preserves the original 1.6 evidence unchanged; JOB17.md records the newer result and its limits. PREPARATION.md describes packaging coverage.
 
-## Runtime design
+## Inherited synchronous HTTP service
 
 Durable original messages and a request ledger are the write authority. The full memory profile derives vector, entity, graph, rule, journal, and schedule evidence. Search merges scoped retrieval paths and verifies returned source messages; it returns evidence rather than generating a final answer. External user IDs map to separate physical raw and derived storage roots.
 
@@ -82,6 +84,6 @@ The previous 1.5 real-model gate failed its Search wave. The 1.6 native regressi
 
 The one 1.6 local real BGE/provider gate then passed: sixteen Add and sixteen Search responses were valid HTTP 200, across sixteen synthetic users/sessions and twenty input messages. The largest measured request times were 83.047 seconds for Add and 26.640 seconds for Search. The recorded runner wall time was 122.469 seconds. Its bounded workload and cleanup checks passed. A minimal-package import check also passed without constructing a model or service.
 
-The implementation owner subsequently started an isolated candidate service and passed seven requests through actual public HTTPS/TLS, including authenticated Add/Search, an unauthorized request, and a same-ID retry. That finite probe leaves the accepted 1.0 service and official binding unchanged. It does not establish 24-hour availability or Full-scale performance. A fresh dependency installation, long-running operation, quality improvement, organizer version/capacity review, and official Smoke/Full remain unproved here. See VALIDATION.md for exact scope and hashes.
+The 1.6 seven-request HTTPS probe was historical evidence only. A later single Add containing twenty messages returned HTTP 504 after 101.234 seconds, and candidate health was then unavailable. No Search was sent in that failed batch check. The internal 1.7 job result addresses durable ownership and a separately bounded execution budget; it does not establish a working public job adapter or repair a deployed endpoint by publication alone. A fresh dependency installation, long-running availability, formal workload scale, quality improvement, organizer version/capacity review, and official Smoke/Full remain unproved. See VALIDATION.md for the unchanged 1.6 history and JOB17.md for current evidence.
 
 First-party source uses the inherited MIT License in LICENSE. Third-party dependencies and BGE-M3 retain their separate terms and attribution; see THIRD_PARTY_NOTICES.md.

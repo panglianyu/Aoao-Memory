@@ -28,6 +28,19 @@ class RequestProgress:
     complete: bool
 
 
+def canonical_received_utc(value: str) -> str:
+    """Keep the first accepted source time in one exact UTC representation."""
+    if type(value) is not str:
+        raise ValueError("invalid challenge received UTC")
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        raise ValueError("invalid challenge received UTC") from None
+    if parsed.tzinfo is not timezone.utc or parsed.isoformat() != value:
+        raise ValueError("invalid challenge received UTC")
+    return value
+
+
 def ordinary_directory(path: Path) -> None:
     """Only host-selected ordinary directories may hold challenge state."""
     for current in (path, *path.parents):
@@ -51,8 +64,12 @@ class ChallengeStore:
         return await asyncio.to_thread(self._run, "lookup", user_id)
 
     async def begin(self, user_id: str, request_id: str, digest: str,
-                    count: int) -> tuple[UserBinding, RequestProgress]:
-        return await asyncio.to_thread(self._run, "begin", user_id, request_id, digest, count)
+                    count: int, *, received_utc: str | None = None
+                    ) -> tuple[UserBinding, RequestProgress]:
+        if received_utc is not None:
+            canonical_received_utc(received_utc)
+        return await asyncio.to_thread(self._run, "begin", user_id, request_id, digest, count,
+                                       received_utc)
 
     async def checkpoint(self, binding: UserBinding, request_id: str, progress: int) -> None:
         await asyncio.to_thread(self._run, "checkpoint", binding.key, request_id, progress)
@@ -110,17 +127,19 @@ class ChallengeStore:
                     binding = UserBinding(user_id, key)
                     if operation == "lookup":
                         return binding if row is not None else None
-                    _, request_id, digest, count = values
+                    _, request_id, digest, count, received_utc = values
                     with db:
                         db.execute("INSERT OR IGNORE INTO challenge_users VALUES(?,?)", (key, user_id))
                         db.execute("""INSERT OR IGNORE INTO challenge_requests
                             (user_key,request_id,body_sha256,received_utc,message_count)
                             VALUES(?,?,?,?,?)""", (key, request_id, digest,
+                            received_utc if received_utc is not None else
                             datetime.now(timezone.utc).isoformat(), count))
                         request = db.execute("""SELECT body_sha256,received_utc,message_count,
                             progress,complete FROM challenge_requests WHERE user_key=? AND request_id=?""",
                             (key, request_id)).fetchone()
-                        if request[0] != digest or request[2] != count:
+                        if (request[0] != digest or request[2] != count
+                                or received_utc is not None and request[1] != received_utc):
                             raise ConflictError("challenge request content conflict")
                     return binding, RequestProgress(request[1], request[3], bool(request[4]))
                 with db:

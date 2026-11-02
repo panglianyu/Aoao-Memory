@@ -1,27 +1,13 @@
 # Local package preparation
 
-This is an independent AMC-ENTRY-1.6 candidate runtime package. It contains 54 selected Python runtime files, inherited public licensing/dependency/setup materials, an invalid provider example, and candidate documentation. It contains no tests or private Aoao OS Git history.
+This independent AMC-ENTRY-1.7 candidate package uses the prior 1.6 PACKAGE_MANIFEST.json explicit whitelist as its base. The 54 prior Python paths were copied from the frozen 1.7 candidate, together with two new job modules and one validation driver. Source bytes and line endings were preserved. Runtime directories were not globbed or copied to construct the package.
 
-## Source and packaging scope
+The original MIT LICENSE, dependency pins, setup script, invalid provider example, third-party notices, and 1.6 VALIDATION.md are retained. README.md and this preparation note describe the new scope. JOB17.md explains the internal job result. validation-job17.json is the exact 2223-byte metadata-only real report, SHA256 ae3ca693deb3fdc6792d6e40945fbb21357081948015ba6bfc23c5374c539c68.
 
-The runtime closure starts at Tools/serve_memory_challenge.py and the independent memory_factory path. It includes function-local imports and multiprocessing worker modules. TYPE_CHECKING-only references do not justify copying the Aoao OS host assistant. Brain, AppBus, channel integrations, MCP/web-research subsystems, old evaluation runners, private configuration, state, logs, and model files were excluded.
+SOURCE_MANIFEST.json inventories only the 57 published Python files. The actual real job check observed 193 private source files before and after execution; its digest is retained as historical measurement and is not presented as this package's digest. PACKAGE_MANIFEST.json inventories a fixed file list and excludes itself to avoid a self-hash cycle.
 
-An earlier candidate source-final.json described a 1.5-era 216-file tree. It was not copied or relabeled as 1.6. The final implementation freeze has 219 Python files; its exact reference is recorded in VALIDATION.md and SOURCE_MANIFEST.json. The independent package retains only the 54 runtime files, verified byte-equal to that freeze. PACKAGE_MANIFEST.json uses a fixed whitelist: 54 source files plus thirteen hand-prepared materials including the manifest itself. Its 66 entries exclude itself to avoid a self-hash cycle. It does not enumerate the local directory; generated __pycache__, pyc files, data and logs from local runtime checks are excluded.
+No private configuration, credential, database, log, original message payload, model weight, installed library source, private benchmark data, or Aoao OS Git history is included. The provider example uses an invalid host and placeholder values. The publication package contains no tests; the reported related matrix belongs to the isolated implementation checkout, not to a portable public test suite.
 
-The inherited LICENSE, requirements files, setup.ps1 and .gitignore are preserved. THIRD_PARTY_NOTICES.md changes the candidate version reference only. The one source file using CRLF was copied by the explicitly authorized raw-byte method because apply_patch normalizes line endings; its bytes are compared directly with the candidate. All other runtime source files are copied without content changes.
+Packaging checks compare all listed file sizes and SHA256 values, ensure source equality with the frozen candidate, preserve historical LICENSE/VALIDATION bytes, and inspect the explicit file list for excluded artifacts. The release owner performs an independent sanitization review before publication. These checks are scoped evidence, not a claim that every possible secret or all transitive dependency terms have been audited.
 
-## Sanitization coverage
-
-Preparation inspected the selected source closure, Python import edges, hardcoded path locations, and limited recognizable credential/private-key patterns in the candidate Python source. No recognizable provider/GitHub/Slack/AWS token or private-key-header pattern was found in that scan. This is scoped evidence, not a claim that every possible secret or every repository file has been audited.
-
-No private provider configuration, credential file, database, log, benchmark content, installed library source, model weight, cache, or Git history was read or copied to construct this package. The provider example uses provider.invalid and INVALID_EXAMPLE_DO_NOT_USE. README paths are illustrative locations, not copied account details.
-
-## Remaining release gaps
-
-- Any later implementation edit requires a new byte comparison and manifest update; the current inventory identifies the completed frozen-source synchronization.
-- The reported 46-module import check passed without constructing models or services. A separate isolated service startup and seven-request public TLS probe also passed in the existing environment. A fresh dependency installation remains untested; these checks do not certify all external-library behavior.
-- The complete private tests were deliberately excluded. Some depend on private machine paths or absent probe helpers; they must not be represented as a portable public test suite.
-- Third-party license labels and versions come from the prior public reference materials; transitive licenses and current installed distributions were not re-audited here.
-- The single bounded local real BGE/provider gate and separate seven-request public TLS probe passed as recorded in VALIDATION.md. Long-running availability, formal input/data scale, and official Smoke/Full remain pending, independently of source publication.
-
-Publishing this candidate source does not change the accepted online 1.0 version, its official binding, or the organizer's version/capacity and Smoke/Full requirements.
+The actual internal batch job passed without a new HTTP adapter. The included HTTP service retains its 1.6 synchronous protocol. 1.7 has not been deployed; official asynchronous status/poll schema, organizer version review, public ingress validation, long-running operation, and official Full remain pending. Publishing source does not change the accepted online 1.0 binding.

@@ -18,7 +18,7 @@ from kernel.memory_pipeline_models import identity
 from kernel.raw_message_models import ConflictError, MessageDraft
 from kernel.raw_message_profile import ConnectorBinding, ConversationBinding, RawMessageProfile
 from kernel.raw_message_service import stable_id
-from .challenge_store import ChallengeStore, UserBinding, ordinary_directory
+from .challenge_store import ChallengeStore, UserBinding, canonical_received_utc, ordinary_directory
 from .grouped_extractor import memory_specs
 from .memory_factory import create_memory_service
 
@@ -380,6 +380,22 @@ class ChallengeRuntime:
     async def add(self, *, user_id: str, session_id: str, request_id: str,
                   messages: list[dict], deadline: float | None = None) -> dict:
         deadline = self.request_deadline(deadline)
+        return await self._add_request(user_id, session_id, request_id, messages, deadline)
+
+    async def add_job(self, *, user_id: str, session_id: str, request_id: str,
+                      messages: list[dict], deadline: float, received_utc: str) -> dict:
+        """Internal durable-job entry; the caller supplies its first acceptance clock."""
+        now = time.monotonic()
+        if (type(deadline) not in {int, float} or not math.isfinite(deadline)
+                or deadline > now + 1700):
+            raise ValueError("invalid challenge job deadline")
+        self._remaining(deadline)
+        canonical_received_utc(received_utc)
+        return await self._add_request(user_id, session_id, request_id, messages, deadline,
+                                       received_utc=received_utc)
+
+    async def _add_request(self, user_id, session_id, request_id, messages, deadline,
+                           received_utc=None) -> dict:
         user_id, session_id, request_id = map(_external_id, (user_id, session_id, request_id))
         messages = _messages(messages)
         body = json.dumps({"user_id": user_id, "session_id": session_id,
@@ -389,14 +405,19 @@ class ChallengeRuntime:
             raise ValueError("challenge request too large")
         digest = hashlib.sha256(body).hexdigest()
         self._available()
-        return await self._owned(self._add(user_id, session_id, request_id, messages, digest,
-                                           deadline), deadline)
+        operation = (self._add(user_id, session_id, request_id, messages, digest, deadline)
+                     if received_utc is None else
+                     self._add(user_id, session_id, request_id, messages, digest, deadline,
+                               received_utc=received_utc))
+        return await self._owned(operation, deadline)
 
-    async def _add(self, user_id, session_id, request_id, messages, digest, deadline):
+    async def _add(self, user_id, session_id, request_id, messages, digest, deadline,
+                   received_utc=None):
         async with self._request_lease(deadline):
             self._available()
             self._remaining(deadline)
-            binding, request = await self._store.begin(user_id, request_id, digest, len(messages))
+            binding, request = await self._store.begin(user_id, request_id, digest, len(messages),
+                **({"received_utc": received_utc} if received_utc is not None else {}))
             service = await self._ensure_service(binding, deadline)
             scope = service.scopes[0]
             with self._phase("add", user_id):

@@ -1,0 +1,98 @@
+{
+  "scope": "internal durable job; not HTTP, official Smoke or Full",
+  "started_utc": "2026-11-02T06:29:59.858861+00:00",
+  "passed": true,
+  "source_before": {
+    "count": 193,
+    "sha256": "7e0a5fc3584fb1df614604dc9b1fc11693d71cc71fc429e91cd817504329c55a"
+  },
+  "startup_seconds": 9.735,
+  "accepted_seconds": 0.015,
+  "job_seconds": 279.593,
+  "job_state": "SUCCEEDED",
+  "job_error_code": null,
+  "journal": {
+    "message_count": 20,
+    "progress": 20,
+    "complete": true,
+    "derivations": [
+      {
+        "domain": "entity",
+        "state": "succeeded",
+        "count": 20
+      },
+      {
+        "domain": "graph",
+        "state": "succeeded",
+        "count": 20
+      },
+      {
+        "domain": "journal",
+        "state": "succeeded",
+        "count": 20
+      },
+      {
+        "domain": "rule",
+        "state": "succeeded",
+        "count": 20
+      },
+      {
+        "domain": "schedule",
+        "state": "succeeded",
+        "count": 20
+      },
+      {
+        "domain": "vector",
+        "state": "succeeded",
+        "count": 20
+      }
+    ],
+    "retry_events": 7
+  },
+  "result_valid": true,
+  "search": [
+    {
+      "seconds": 0.219,
+      "marker_found": true
+    },
+    {
+      "seconds": 0.266,
+      "marker_found": true
+    }
+  ],
+  "owner_idle_observed": true,
+  "counts_valid": true,
+  "closed": true,
+  "shared": {
+    "load_count": 1,
+    "generation_count": 1,
+    "model_owner_count": 0,
+    "model_owner_peak": 1,
+    "active_generation_count": 0,
+    "active_generation_peak": 1,
+    "ipc_inflight": 0,
+    "ipc_peak": 1,
+    "clean_close": true,
+    "failed": false
+  },
+  "resources": {
+    "scope": "sampled runner and descendants; no hard memory bound",
+    "samples": 528,
+    "peak_rss_bytes": 2829910016,
+    "min_machine_available_bytes": 5509607424,
+    "error_type": null,
+    "stop_reason": null
+  },
+  "processes": {
+    "observed_count": 4,
+    "still_live_count": 0,
+    "unknown_count": 0,
+    "scope": "only observed runner descendants"
+  },
+  "source_after": {
+    "count": 193,
+    "sha256": "7e0a5fc3584fb1df614604dc9b1fc11693d71cc71fc429e91cd817504329c55a"
+  },
+  "finished_utc": "2026-11-02T06:34:50.967669+00:00",
+  "runner_seconds": 291.125
+}

@@ -23,11 +23,15 @@ class AdmissionClosed(RuntimeError):
 class _Ticket:
     deadline: float
     future: asyncio.Future[object]
+    settled: asyncio.Future[None]
+    owner: object
     phase: str = "reading"
     operation: Callable[..., Awaitable[object]] | None = None
     body_task: asyncio.Task | None = None
     lane_id: int | None = None
     affinity_key: str | None = None
+    before_release: Callable[[], Awaitable[None]] | None = None
+    release_task: asyncio.Task | None = None
 
 
 @dataclass
@@ -59,6 +63,7 @@ class BoundedAdmission:
         self._last_cache_token = [0] * lane_count
         self._next_lane = 0
         self._close_task: asyncio.Task | None = None
+        self._release_tasks: dict[asyncio.Task, _Ticket] = {}
         self._closing = False
         self._failure: BaseException | None = None
         self._empty = asyncio.Event()
@@ -89,7 +94,8 @@ class BoundedAdmission:
         if not future.cancelled():
             future.exception()
 
-    def reserve(self, deadline: float) -> _Ticket:
+    def reserve(self, deadline: float, *,
+                before_release: Callable[[], Awaitable[None]] | None = None) -> _Ticket:
         # No await separates the capacity check and reservation.
         if self._closing:
             raise AdmissionClosed("admission unavailable")
@@ -98,8 +104,13 @@ class BoundedAdmission:
         if (type(deadline) not in {int, float} or not math.isfinite(deadline)
                 or deadline <= time.monotonic()):
             raise TimeoutError("request deadline expired")
-        ticket = _Ticket(deadline, asyncio.get_running_loop().create_future())
+        if before_release is not None and not callable(before_release):
+            raise ValueError("invalid admission release hook")
+        loop = asyncio.get_running_loop()
+        ticket = _Ticket(deadline, loop.create_future(), loop.create_future(), self,
+                         before_release=before_release)
         ticket.future.add_done_callback(self._consume)
+        ticket.settled.add_done_callback(self._consume)
         self._tickets.add(ticket)
         self._empty.clear()
         return ticket
@@ -140,9 +151,52 @@ class BoundedAdmission:
     def _finish(self, ticket: _Ticket) -> None:
         if ticket not in self._tickets:
             return
+        if ticket.before_release is None:
+            self._finish_now(ticket)
+            return
+        if ticket.release_task is not None:
+            return
+        ticket.phase = "releasing"
+        task = asyncio.create_task(self._release(ticket))
+        ticket.release_task = task
+        self._release_tasks[task] = ticket
+
+        def finished(done: asyncio.Task) -> None:
+            self._release_tasks.pop(done, None)
+            self._consume(done)
+
+        task.add_done_callback(finished)
+
+    async def _release(self, ticket: _Ticket) -> None:
+        try:
+            hook = ticket.before_release
+            if hook is None:
+                raise RuntimeError("missing admission release hook")
+            await hook()
+        except BaseException as error:
+            self._fail_closed(error)
+            raise
+        self._finish_now(ticket)
+
+    async def _wait_releases(self, lane_id: int | None = None) -> None:
+        while True:
+            tasks = [task for task, ticket in self._release_tasks.items()
+                     if lane_id is None or ticket.lane_id in {None, lane_id}]
+            if not tasks:
+                break
+            await asyncio.gather(*(asyncio.shield(task) for task in tasks),
+                                 return_exceptions=True)
+        if self._failure is not None:
+            raise AdmissionClosed("admission settlement unavailable")
+
+    def _finish_now(self, ticket: _Ticket) -> None:
+        if ticket not in self._tickets:
+            return
         ticket.phase = "done"
         ticket.operation = None
         ticket.body_task = None
+        ticket.before_release = None
+        ticket.release_task = None
         self._tickets.discard(ticket)
         if ticket.lane_id is not None:
             self._lane_loads[ticket.lane_id] -= 1
@@ -152,6 +206,8 @@ class BoundedAdmission:
                 self._release_pin(ticket.affinity_key, pin)
         if not self._tickets:
             self._empty.set()
+        if not ticket.settled.done():
+            ticket.settled.set_result(None)
 
     def _release_pin(self, key: str, pin: _UserPin) -> None:
         if pin.pending == 0 and pin.cache_token is None:
@@ -162,7 +218,16 @@ class BoundedAdmission:
             self._failure = error
         self._closing = True
         for ticket in tuple(self._tickets):
+            self._publish(ticket, error=AdmissionClosed("admission unavailable"))
+            if not ticket.settled.done():
+                ticket.settled.set_exception(AdmissionClosed("admission settlement unavailable"))
             self.abandon(ticket, closing=True)
+
+    def fail_closed(self, error: BaseException) -> None:
+        """Retain active tickets when a durable owner cannot prove completion."""
+        if not isinstance(error, BaseException):
+            raise TypeError("admission failure must be an exception")
+        self._fail_closed(error)
 
     def _cache_identity(self, lane_id: int, user_id: str, cache_token: int) -> _UserPin:
         if (self.lane_count != 2 or type(lane_id) is not int
@@ -237,7 +302,7 @@ class BoundedAdmission:
         """Remove only unstarted work; a running ticket remains dispatcher-owned."""
         if ticket not in self._tickets:
             return
-        if ticket.phase in {"running", "settling", "done", "canceling_body"}:
+        if ticket.phase in {"running", "settling", "releasing", "done", "canceling_body"}:
             return
         if closing:
             self._publish(ticket, error=AdmissionClosed("admission closing"))
@@ -258,9 +323,17 @@ class BoundedAdmission:
         else:
             self._finish(ticket)
 
-    async def submit(self, ticket: _Ticket,
-                     operation: Callable[..., Awaitable[object]], *,
-                     affinity_key: str | None = None) -> object:
+    def enqueue(self, ticket: _Ticket,
+                operation: Callable[..., Awaitable[object]], *,
+                affinity_key: str | None = None,
+                before_release: Callable[[], Awaitable[None]] | None = None) -> None:
+        """Hand work to its dispatcher without creating or depending on a waiter."""
+        if ticket in self._tickets and ticket.phase == "reading" and before_release is not None:
+            if (not callable(before_release)
+                    or ticket.before_release is not None and ticket.before_release is not before_release):
+                self.abandon(ticket)
+                raise ValueError("invalid admission release hook")
+            ticket.before_release = before_release
         # Recheck closing after body reading and validation, before enqueueing.
         if self._closing or ticket not in self._tickets or ticket.phase != "reading":
             self.abandon(ticket, closing=True)
@@ -280,6 +353,19 @@ class BoundedAdmission:
             dispatcher = asyncio.create_task(self._dispatch(lane))
             self._dispatchers[lane] = dispatcher
             dispatcher.add_done_callback(self._consume)
+
+    async def wait_settled(self, ticket: _Ticket) -> None:
+        """Wait for real ticket release; cancellation never abandons its owner."""
+        if ticket.owner is not self:
+            raise ValueError("ticket belongs to another admission")
+        if self._failure is not None:
+            raise AdmissionClosed("admission settlement unavailable")
+        await asyncio.shield(ticket.settled)
+
+    async def submit(self, ticket: _Ticket,
+                     operation: Callable[..., Awaitable[object]], *,
+                     affinity_key: str | None = None) -> object:
+        self.enqueue(ticket, operation, affinity_key=affinity_key)
         try:
             return await asyncio.wait_for(asyncio.shield(ticket.future),
                                           timeout=max(0, ticket.deadline - time.monotonic()))
@@ -301,18 +387,25 @@ class BoundedAdmission:
         try:
             queue = self._queues[lane_id]
             while queue:
+                # Removed queue entries can still own a durable release hook.
+                await self._wait_releases(lane_id)
+                if not queue:
+                    break
                 current = self._current[lane_id] = queue.popleft()
                 await self._idle(lane_id)
                 if current.phase != "queued":
+                    await self.wait_settled(current)
                     current = None
                     continue
                 if self._closing:
                     self.abandon(current, closing=True)
+                    await self.wait_settled(current)
                     current = None
                     continue
                 if current.deadline <= time.monotonic():
                     self._publish(current, error=TimeoutError("request deadline expired"))
                     self._finish(current)
+                    await self.wait_settled(current)
                     current = None
                     continue
                 operation = current.operation
@@ -328,10 +421,13 @@ class BoundedAdmission:
                         self._publish(current, error=TimeoutError("request deadline expired"))
                     else:
                         self._publish(current, result=result)
+                if self._failure is not None:
+                    raise AdmissionClosed("admission settlement unavailable")
                 current.phase = "settling"
                 # The HTTP result/timeout does not release the real execution slot.
                 await self._idle(lane_id)
                 self._finish(current)
+                await self.wait_settled(current)
                 current = None
         except BaseException as error:
             if current is not None:
@@ -354,6 +450,10 @@ class BoundedAdmission:
             for result in results:
                 if isinstance(result, BaseException) and self._failure is None:
                     self._failure = result
+        try:
+            await self._wait_releases()
+        except AdmissionClosed:
+            pass  # Preserve the failure while still checking every real owner below.
         if self._tickets or self._failure is not None:
             # Even an interrupted dispatcher cannot authorize owner replacement.
             results = await asyncio.gather(*(self._idle(lane) for lane in range(self.lane_count)),
@@ -365,6 +465,10 @@ class BoundedAdmission:
                         self._failure = results[lane]
                 else:
                     self._finish(ticket)
+        try:
+            await self._wait_releases()
+        except AdmissionClosed:
+            pass  # A failed hook keeps its ticket and the close remains failed.
         if self._failure is not None:
             raise RuntimeError("admission dispatcher unavailable") from None
 
