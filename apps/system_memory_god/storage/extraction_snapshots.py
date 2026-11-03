@@ -4,6 +4,7 @@ from dataclasses import asdict
 import hashlib
 import json
 
+from kernel.challenge_diagnostics import DiagnosticError
 from kernel.memory_pipeline_models import SourceRevision, canonical, identity
 from .derived_evidence import validate_payload
 from .pipeline_database import PipelineDatabase, paged_rows
@@ -18,14 +19,14 @@ CREATE TABLE extraction_snapshots (
 
 def validate_group(outputs: object) -> dict:
     if type(outputs) is not dict or set(outputs) != set(STRUCTURED_DOMAINS):
-        raise ValueError("invalid grouped extraction fields")
+        raise DiagnosticError("group_shape", "invalid grouped extraction fields")
     for domain, values in outputs.items():
         if type(values) is not list or len(values) > 10:
-            raise ValueError("invalid grouped extraction count")
+            raise DiagnosticError("group_shape", "invalid grouped extraction count")
         for payload in values:
             validate_payload(domain, payload)
     if len(canonical(outputs)) > 512000:
-        raise ValueError("grouped extraction too large")
+        raise DiagnosticError("group_shape", "grouped extraction too large")
     return outputs
 
 
@@ -43,19 +44,22 @@ class ExtractionSnapshots:
         if not self._db.path.exists() and any(
                 self._db.path.with_name(self._db.path.name + suffix).exists()
                 for suffix in ("-journal", "-wal", "-shm")):
-            raise ValueError("extraction snapshot sidefile unavailable")
+            raise DiagnosticError("cache_integrity", "extraction snapshot sidefile unavailable")
         return self._db.path.exists()
 
     @staticmethod
     def _decode(row):
         key, encoded, domain, content_hash, body, digest = row
-        source = SourceRevision(**json.loads(encoded))
-        outputs = validate_group(json.loads(body))
+        try:
+            source = SourceRevision(**json.loads(encoded))
+            outputs = validate_group(json.loads(body))
+        except (ValueError, TypeError, KeyError):
+            raise DiagnosticError("cache_integrity", "extraction snapshot integrity conflict") from None
         if (key != extraction_key(source) or domain not in STRUCTURED_DOMAINS
                 or encoded != canonical(asdict(source)) or body != canonical(outputs)
                 or len(content_hash) != 64
                 or digest != hashlib.sha256(canonical(row[:5]).encode()).hexdigest()):
-            raise ValueError("extraction snapshot integrity conflict")
+            raise DiagnosticError("cache_integrity", "extraction snapshot integrity conflict")
         return source, domain, content_hash, outputs
 
     def get(self, source, content_hash):
@@ -63,7 +67,7 @@ class ExtractionSnapshots:
             self._db._path_check()
             if any(self._db.path.with_name(self._db.path.name + suffix).exists()
                    for suffix in ("-journal", "-wal", "-shm")):
-                raise ValueError("extraction snapshot unavailable")
+                raise DiagnosticError("cache_integrity", "extraction snapshot unavailable")
             return None
         with self._db.readonly_snapshot() as db:
             row = db.execute("SELECT * FROM extraction_snapshots WHERE cache_key=?",
@@ -72,7 +76,7 @@ class ExtractionSnapshots:
             return None
         old_source, _, old_hash, outputs = self._decode(row)
         if extraction_key(old_source) != extraction_key(source) or old_hash != content_hash:
-            raise ValueError("extraction snapshot content conflict")
+            raise DiagnosticError("cache_integrity", "extraction snapshot content conflict")
         return outputs
 
     def put(self, source, domain, content_hash, outputs):
@@ -87,7 +91,7 @@ class ExtractionSnapshots:
             if previous is not None:
                 _, _, old_hash, old_outputs = self._decode(previous)
                 if old_hash != content_hash or old_outputs != outputs:
-                    raise ValueError("extraction snapshot conflict")
+                    raise DiagnosticError("cache_integrity", "extraction snapshot conflict")
             else:
                 db.execute("INSERT INTO extraction_snapshots VALUES(?,?,?,?,?,?)", row)
 

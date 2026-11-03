@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 import hmac
 import json
 import time
+from typing import AbstractSet, cast
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -16,7 +17,7 @@ from kernel.raw_message_models import ConflictError
 from .challenge_admission import AdmissionClosed, AdmissionFull, BoundedAdmission
 
 
-ENTRY_VERSION = "AMC-ENTRY-1.8"
+ENTRY_VERSION = "AMC-ENTRY-1.8.1"
 MAX_BODY_BYTES = 2 * 1024 * 1024
 MAX_MESSAGE_CHARS = 81920
 MAX_MESSAGES = 256
@@ -46,10 +47,10 @@ def _text(value: object, maximum: int) -> bool:
 
 
 def _identity(value: object) -> bool:
-    return _text(value, 256) and "\x00" not in value
+    return _text(value, 256) and "\x00" not in cast(str, value)
 
 
-def _fields(value: object, required: set[str], optional: set[str] = frozenset()) -> dict:
+def _fields(value: object, required: set[str], optional: AbstractSet[str] = frozenset()) -> dict:
     if type(value) is not dict or not required <= value.keys() or value.keys() - required - optional:
         raise ValueError("invalid request")
     return value

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import asyncio
+from httpx import URL
 from kernel.raw_message_service import RawMessageService
 from .daily_runtime import DailyMemoryRuntime, _shared_options
 from .memory_service import MemoryService
@@ -60,7 +61,10 @@ def create_memory_service(profile, *, mode="memory-full-v1", extractor=None,
         if mode == "memory-full-v1" and client is not None and model is not None:
             from .grouped_extractor import GroupedDailyExtractor
             from .storage.scoped_stores import ScopedStores
-            extractor = GroupedDailyExtractor(ScopedStores(profile.derived_root), client, model)
+            origin = getattr(client, "base_url", None)
+            provider_base_url = origin if type(origin) is str else str(origin) if type(origin) is URL else None
+            extractor = GroupedDailyExtractor(ScopedStores(profile.derived_root), client, model,
+                                              provider_base_url=provider_base_url)
         elif mode != "raw-vector-v1":
             raise ValueError("explicit structured extraction boundary required")
         else:

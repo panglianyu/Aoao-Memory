@@ -8,6 +8,7 @@ dispatch them off their event loop. Each call owns a short-lived connection.
 from __future__ import annotations
 
 from contextlib import AbstractContextManager
+from collections.abc import Mapping
 from datetime import datetime
 import hashlib
 import json
@@ -1312,10 +1313,20 @@ class RawMessageStore:
             )
 
     def claim_partition(self, scope: Scope, worker_id: str, *, now: float | None = None,
-                        lease_seconds: int = 60, max_active: int = 2) -> dict | None:
+                        lease_seconds: int = 60, max_active: int = 2,
+                        selected_attempts: Mapping[str, int] | None = None,
+                        selected_sources: Mapping[str, Mapping[str, object]] | None = None) -> dict | None:
         with self._db(write=True) as db:
             return _outbox.claim_partition(db, scope, worker_id, now=now,
-                                           lease_seconds=lease_seconds, max_active=max_active)
+                                           lease_seconds=lease_seconds, max_active=max_active,
+                                           selected_attempts=selected_attempts, selected_sources=selected_sources)
+
+    def recover_selected_failed(self, rows: tuple[dict, ...], manifest_digest: str) -> None:
+        """One database CAS, with the recovery authorization in the same transaction."""
+        from kernel.raw_message_recovery import recover_failed_rows
+
+        with self._db(write=True) as db:
+            recover_failed_rows(db, rows, manifest_digest)
 
     def renew(self, scope: Scope, task_id: str, lease_token: str, *,
               now: float | None = None, lease_seconds: int = 60) -> dict:

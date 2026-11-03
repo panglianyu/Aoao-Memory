@@ -6,6 +6,7 @@ import json
 import sqlite3
 import time
 import uuid
+from collections.abc import Mapping
 
 from kernel.raw_message_models import (
     ConflictError,
@@ -74,6 +75,8 @@ def claim(
     *,
     now: float | None = None,
     lease_seconds: int = 60,
+    selected_attempts: Mapping[str, int] | None = None,
+    selected_sources: Mapping[str, Mapping[str, object]] | None = None,
 ) -> dict | None:
     _scope(scope)
     _id(worker_id)
@@ -81,15 +84,46 @@ def claim(
         raise RawMessageError("invalid lease duration")
     now = _clock(now)
     predicate, scope_params = _predicate(scope, "m")
+    selected_sql = ""
+    selected_params: list[object] = []
+    if selected_sources is not None and (selected_attempts is None or set(selected_sources) != set(selected_attempts)):
+        raise RawMessageError("invalid selected recovery sources")
+    if selected_attempts is not None:
+        if not selected_attempts or len(selected_attempts) > 18:
+            raise RawMessageError("invalid selected recovery claims")
+        source_fields = (("d", "message_id"), ("d", "revision"), ("d", "processor"),
+                         ("d", "processor_version"), ("d", "target_domain"), ("d", "model"),
+                         ("d", "prompt_hash"), ("m", "agent_id"), ("m", "user_id"),
+                         ("m", "connector_id"), ("m", "conversation_id"), ("m", "content_hash"))
+        choices = []
+        for task_id, attempt in selected_attempts.items():
+            _id(task_id)
+            if type(attempt) is not int or not 1 <= attempt < 2**63 - 1:
+                raise RawMessageError("invalid selected recovery attempt")
+            selected_params.extend((task_id, attempt))
+            clause = "d.task_id=? AND d.attempts=? AND d.status='pending'"
+            if selected_sources is not None:
+                source = selected_sources[task_id]
+                if source.get("task_id") != task_id or source.get("attempts") != attempt:
+                    raise RawMessageError("selected recovery source conflict")
+                for alias, field in source_fields:
+                    if field not in source:
+                        raise RawMessageError("incomplete selected recovery source")
+                    clause += f" AND {alias}.{field}=?"
+                    selected_params.append(source[field])
+                clause += " AND m.status='active'"
+            choices.append("(" + clause + ")")
+        selected_sql = " AND (" + " OR ".join(choices) + ")"
     row = db.execute(
         """SELECT d.* FROM derivation_outbox d JOIN raw_messages m USING(message_id)
         WHERE """
         + predicate
+        + selected_sql
         + """ AND m.status IN ('active','edited')
         AND d.revision=m.revision AND ((d.status='pending' AND d.available_at<=?)
           OR (d.status='leased' AND d.lease_until<=?))
         ORDER BY d.available_at,d.created_at,d.task_id LIMIT 1""",
-        [*scope_params, now, now],
+        [*scope_params, *selected_params, now, now],
     ).fetchone()
     if not row:
         return None
@@ -139,7 +173,9 @@ def _leased(
 
 def claim_partition(db: sqlite3.Connection, scope: Scope, worker_id: str, *,
                     now: float | None = None, lease_seconds: int = 60,
-                    max_active: int = 2) -> dict | None:
+                    max_active: int = 2,
+                    selected_attempts: Mapping[str, int] | None = None,
+                    selected_sources: Mapping[str, Mapping[str, object]] | None = None) -> dict | None:
     """Serialize a full partition inside the caller's Raw write transaction."""
     _scope(scope)
     _id(worker_id)
@@ -154,7 +190,8 @@ def claim_partition(db: sqlite3.Connection, scope: Scope, worker_id: str, *,
     if len(active) >= max_active or any(tuple(row) == (
             scope.connector_id, scope.conversation_id, scope.agent_id, scope.user_id) for row in active):
         return None
-    return claim(db, scope, worker_id, now=now, lease_seconds=lease_seconds)
+    return claim(db, scope, worker_id, now=now, lease_seconds=lease_seconds,
+                 selected_attempts=selected_attempts, selected_sources=selected_sources)
 
 
 def renew(db: sqlite3.Connection, scope: Scope, task_id: str, lease_token: str, *,

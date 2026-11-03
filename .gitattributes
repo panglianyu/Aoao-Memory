@@ -1,0 +1,5 @@
+# Frozen runtime bytes include both LF and CRLF; do not normalize them in Git.
+kernel/** -text
+apps/** -text
+protocols/** -text
+Tools/** -text

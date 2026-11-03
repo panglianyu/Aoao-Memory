@@ -13,6 +13,7 @@ from pathlib import Path
 import time
 from typing import Any, Callable, TYPE_CHECKING
 
+from kernel.challenge_diagnostics import emit_failure
 from kernel.daily_memory_contracts import MAX_MEMORY_QUERY_CHARS, memory_retrieval_hints
 from kernel.memory_pipeline_models import identity
 from kernel.raw_message_models import ConflictError, MessageDraft
@@ -28,6 +29,7 @@ if TYPE_CHECKING:
 VERSION = "AMC-ENTRY-1.6"
 MAX_MESSAGES = 256
 MAX_MESSAGE_CHARS = 81920
+CLEANUP_TIMEOUT = 60.0
 
 
 def _external_id(value: object) -> str:
@@ -65,7 +67,7 @@ class ChallengeRuntime:
     def __init__(self, root: Path, *, client, model: str, service_factory=None,
                  add_timeout: float = 1700.0, embedding_owner: SharedEmbeddingOwner | None = None,
                  store: ChallengeStore | None = None, cache_observer: Callable | None = None,
-                 observer: Callable | None = None):
+                 observer: Callable | None = None, failure_observer: Callable | None = None):
         if not isinstance(root, Path) or not root.is_absolute() or ".." in root.parts:
             raise ValueError("explicit absolute challenge root required")
         project = Path(__file__).resolve().parents[2]
@@ -85,10 +87,13 @@ class ChallengeRuntime:
             raise ValueError("shared journal must match the runtime identity")
         self._store = store if store is not None else ChallengeStore(root, model=model)
         self._cache_observer, self._observer = cache_observer, observer
+        self._failure_observer = failure_observer
         self._cache_user: str | None = None
         self._cache_token = 0
         self._lease = asyncio.Lock()
         self._tasks: set[asyncio.Task] = set()
+        self._cleanup_tasks: set[asyncio.Task] = set()
+        self._cleanup_watchers: set[asyncio.Task] = set()
         self._idle = asyncio.Event()
         self._idle.set()
         self._service = None
@@ -108,7 +113,8 @@ class ChallengeRuntime:
     def _record_failure(self, stage: str, error: BaseException) -> None:
         allowed = {"cache_enter", "profile", "register_generation", "factory", "initialize",
                    "start", "bind_deadline", "prepare_close", "service_close",
-                   "generation_close", "cache_retired", "published", "search"}
+                   "generation_close", "cache_retired", "published", "search",
+                   "raw_settlement", "cleanup_timeout", "failure_observer"}
         if stage not in allowed:
             raise ValueError("invalid internal failure stage")
         classes = {"TimeoutError", "CancelledError", "PermissionError", "FileNotFoundError",
@@ -142,6 +148,15 @@ class ChallengeRuntime:
         entry = {"stage": stage, "error_type": chain[0]["error_type"], "chain": chain}
         if len(self._failures) < 8:
             self._failures.append(entry)
+        diagnostic_stage = ("retirement" if stage in {
+            "prepare_close", "service_close", "generation_close", "cache_retired",
+            "raw_settlement", "cleanup_timeout", "failure_observer"} else
+            "published" if stage == "published" else
+            "unknown" if stage == "search" else "prepare")
+        try:
+            emit_failure(diagnostic_stage, error)
+        except Exception:
+            pass  # Optional evidence cannot replace the business failure or its owner.
 
     @contextmanager
     def _failure_stage(self, stage: str):
@@ -159,6 +174,16 @@ class ChallengeRuntime:
     def _available(self) -> None:
         if self._blocked or self._closing or self._closed:
             raise RuntimeError("challenge runtime unavailable")
+
+    def _block(self) -> None:
+        if self._blocked:
+            return
+        self._blocked = True
+        if self._failure_observer is not None:
+            try:
+                self._failure_observer()
+            except Exception as error:
+                self._record_failure("failure_observer", error)
 
     @property
     def cache_user(self) -> str | None:
@@ -225,33 +250,29 @@ class ChallengeRuntime:
             raise asyncio.CancelledError
         return result
 
-    async def _owned(self, operation, deadline: float):
-        # No suspension is allowed between clearing idle and registering the
-        # owner: the admission dispatcher must never observe a false idle gap.
+    def _track_owner(self, task: asyncio.Task) -> None:
         self._idle.clear()
-        task = asyncio.create_task(operation)
         self._tasks.add(task)
 
         def settled(done: asyncio.Task) -> None:
             self._tasks.discard(done)
             try:
-                error = done.exception()
-                if error is not None and not isinstance(error, ConflictError) and self._service is not None:
-                    # Raw append may return before its derivation worker settles.
-                    # A failed request coroutine alone is not an ownership fence.
-                    try:
-                        raw_settled = self._service.raw.settlement_status == "settled"
-                    except Exception:
-                        raw_settled = False
-                    if not raw_settled:
-                        self._blocked = True
+                done.exception()
             except asyncio.CancelledError:
-                self._blocked = True
+                if done in self._cleanup_tasks:
+                    self._block()
             finally:
                 if not self._tasks:
                     self._idle.set()
 
         task.add_done_callback(settled)
+
+    async def _owned(self, operation, deadline: float):
+        # No suspension is allowed between clearing idle and registering the
+        # owner: the admission dispatcher must never observe a false idle gap.
+        self._idle.clear()
+        task = asyncio.create_task(operation)
+        self._track_owner(task)
         try:
             result = await asyncio.wait_for(asyncio.shield(task), timeout=self._remaining(deadline))
         except asyncio.TimeoutError:
@@ -262,11 +283,50 @@ class ChallengeRuntime:
     @asynccontextmanager
     async def _request_lease(self, deadline: float):
         await asyncio.wait_for(self._lease.acquire(), timeout=self._remaining(deadline))
+        transferred = False
         try:
             self._remaining(deadline)
             yield
+        except BaseException as error:
+            if (not isinstance(error, ConflictError) and self._owns_cache
+                    and not self._blocked):
+                # Transfer this exact lease to cleanup before publishing the
+                # request failure. Direct callers and admission see no idle gap.
+                self._start_failed_cleanup(deadline)
+                transferred = True
+            raise
         finally:
+            if not transferred:
+                self._lease.release()
+
+    @staticmethod
+    def _cleanup_deadline(request_deadline: float) -> float:
+        # This clock belongs only to retirement. A shielded Raw thread may
+        # report its failure long after the HTTP/business clock has expired.
+        return time.monotonic() + CLEANUP_TIMEOUT
+
+    def _start_failed_cleanup(self, request_deadline: float) -> None:
+        limit = self._cleanup_deadline(request_deadline)
+        task = asyncio.create_task(self._retire_service(limit))
+        self._cleanup_tasks.add(task)
+        self._track_owner(task)
+
+        def retired(done: asyncio.Task) -> None:
+            self._cleanup_tasks.discard(done)
             self._lease.release()
+
+        task.add_done_callback(retired)
+        watcher = asyncio.create_task(self._watch_cleanup(task, limit))
+        self._cleanup_watchers.add(watcher)
+        watcher.add_done_callback(self._cleanup_watchers.discard)
+
+    async def _watch_cleanup(self, task: asyncio.Task, deadline: float) -> None:
+        done, _ = await asyncio.wait({task}, timeout=max(0, deadline - time.monotonic()))
+        if not done:
+            # Do not cancel the close coroutine: its Raw threads, workers and
+            # generation still have to be owned after this cleanup budget ends.
+            self._block()
+            self._record_failure("cleanup_timeout", TimeoutError())
 
     def _profile(self, binding: UserBinding) -> RawMessageProfile:
         root = self.root / "users" / binding.key
@@ -291,11 +351,11 @@ class ChallengeRuntime:
                     self._service.runtime.set_embedding_deadline(deadline_ns)
                 except BaseException as error:
                     self._record_failure("bind_deadline", error)
-                    self._blocked = True
+                    self._block()
                     raise RuntimeError("challenge shared embedding unavailable") from None
                 self._remaining(deadline)
             return self._service
-        await self._retire_service(deadline)
+        await self._retire_service(self._cleanup_deadline(deadline))
         self._remaining(deadline)
         stage = "cache_enter"
         try:
@@ -330,39 +390,50 @@ class ChallengeRuntime:
             self._remaining(deadline)
         except TimeoutError as error:
             self._record_failure(stage, error)
-            # A late constructor/start still belongs to this owner. Retire it
-            # before releasing the lease; never lose it when the waiter leaves.
-            await self._retire_service(deadline)
+            if stage in {"cache_enter", "register_generation"}:
+                self._block()
             raise
         except BaseException as error:
             self._record_failure(stage, error)
-            self._blocked = True
+            if stage in {"cache_enter", "profile", "register_generation"}:
+                self._block()
             raise RuntimeError("challenge owner startup failed") from None
         return service
 
     async def _retire_service(self, deadline: float | None = None) -> None:
         stage = "prepare_close"
         try:
+            def remaining() -> None:
+                if deadline is not None:
+                    self._remaining(deadline)
+
+            remaining()
             close_options = ({"deadline_ns": int(deadline * 1_000_000_000)}
                              if deadline is not None else {})
             with self._phase("retire", self._cache_user or ""):
                 if self._embedding_generation is not None:
                     await self._embedding_generation.prepare_close(**close_options)
+                    remaining()
                 if self._service is not None:
                     stage = "service_close"
                     await self._service.close()
+                    remaining()
+                    stage = "raw_settlement"
+                    if self._service.raw.settlement_status != "settled":
+                        raise RuntimeError("challenge Raw retirement incomplete")
                     self._service = None
                     self._binding = None
                 if self._embedding_generation is not None:
                     stage = "generation_close"
                     await self._embedding_generation.close(**close_options)
+                    remaining()
                     self._embedding_generation = None
                 stage = "cache_retired"
                 self._cache_event("retired")
                 self._cache_user = None
         except BaseException as error:
             self._record_failure(stage, error)
-            self._blocked = True
+            self._block()
             raise RuntimeError("challenge owner close failed") from None
 
     async def _published(self, service, deadline: float) -> None:

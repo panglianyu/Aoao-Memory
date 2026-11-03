@@ -1,56 +1,37 @@
-# Candidate validation boundary
+# AMC-ENTRY-1.8.1 validation snapshot
 
-Package version: AMC-ENTRY-1.6. Runtime source is synchronized to the frozen implementation. Local real-model result review is Go within the limited gate below. This document does not approve deployment, official version binding, or an official evaluation.
+This file summarizes actual checks reported by the implementation owner and independently reviewed recovery evidence. Packaging itself did not run models, start services, send evaluation requests or repeat the test matrices.
 
-## Accepted service and inherited baseline
+## Related offline checks
 
-The accepted API source remains AMC-ENTRY-1.0, fixed public commit e5d5251269d47b27b006aa12df728897591bc90a. This 1.6 package has not replaced that implementation, its data, or its bound endpoints.
+- The earlier repair matrix finished with 412 passed, 1 skipped and 8 failed. Seven failures were missing inherited test helpers and one was a stale version assertion. Restoring the exact helpers and correcting the assertion produced 8 passes in the affected-only rerun. The 412 green cases were not repeated.
+- Subsequent API, CLI and diagnostic lifetime checks: 56 passed. Changed implementation Ruff and limited Mypy checks passed; these were not full repository analyses.
+- Clone identity and frozen-read checks were verified separately. A copied vector database retains its original file identity until the explicit reviewed migration; ordinary copying is not a safe deployment operation.
+- Provider compatibility checks: 53 passed and one test-fixture failure. The fixture alone was corrected and its test passed. Other green tests were not repeated. Ruff, Mypy and diff checks passed.
+- Remaining-task recovery checks: 40 passed and one test-fixture failure. The missing synthetic partition registration was corrected and that single case passed in 10.33 seconds. Ruff and limited Mypy passed. Tests covered history preservation, three retained successes, fifteen selected attempts, partial transactions, duplicate authorization, frozen checkpoint checks and abort while another call waits for the model-budget lock.
 
-The prior 1.5 one-shot local real-model gate completed 16 synthetic-user Adds successfully, followed by one successful Search and fifteen HTTP 503 Search responses. Fourteen failed Search requests did not enter the runtime. That gate failed; its successful Adds were not proof of complete Search behavior, formal capacity, or official Smoke/Full.
+All these matrix results belong to the isolated implementation checkout. The public package has not repeated them or completed a fresh dependency installation.
 
-## 1.6 change and current local evidence
+## Bounded real recovery
 
-The first real MemoryService/Chroma/Windows worker reproduction with fake model dependencies failed during service retirement. Snapshot root cleanup requested WRITE access to the common temporary-directory anchor while another cache guard shared only READ. Native sharing violation 32 was wrapped as OSError(32, ...), which could appear as Python BrokenPipeError. That name did not identify an IPC transport failure.
+The prior recovery made two provider calls and did not receive normally finished structured responses. Its exact finish reasons were not retained in the old diagnostics. The later successful run supports the compatibility fix; it does not retroactively prove the old finish reason or a network cause.
 
-The minimal filesystem change is confined to SnapshotFileOps._hold: every directory guard now uses the existing read-only bound-handle helper, starting from the captured anchor identity. No WRITE/DELETE sharing was added. Reparse, final-path, file identity, retained-handle, and bound-object deletion checks remain in place. The kernel-wide directory helper was not changed for this fix.
+The new run retained three already successful derivations and selected only the remaining fifteen. All eighteen then succeeded, with zero failures. The retained three had no new attempt; the selected fifteen each gained exactly one. Three new provider calls were used, with the previous two permanently counted: five total.
 
-The implementation owner reported the four targeted native checks changing from two failures/two passes before the fix to four passes in 6.40 seconds after it. Those checks cover sibling-cache capture/cleanup coexistence and rejection of WRITE and DELETE opens against the shared guard.
+The helper ended after 31.922 seconds. Its supervisor ended after 33.156 seconds with exit code zero, no forced stop and zero active child processes. Embedding, generation, IPC and model-owner counters settled to zero. The two original incomplete request records remained incomplete; the tool did not manufacture request completion. Normal runtime publication is required when the original request resumes.
 
-The implementation owner also reported one passing real Windows worker test after the fix, taking 66.63 seconds. It exercises the actual MemoryService, DailyMemoryRuntime, Chroma, ASGI boundary, native cleanup, and worker processes, while embedding and LLM dependencies are explicit fakes. All sixteen Add responses and sixteen Search responses were HTTP 200, with own-marker isolation checks passing. The reported maximum HTTP durations were 37.375 seconds for Add and 21.094 seconds for Search.
+Root, independent Python review and independent security review accepted this bounded recovery result for the already reviewed deployment step. It is not a general engineering or Full-capacity certificate.
 
-That fake-model run created 32 services and 32 embedding generations. Its observed shared-owner counters were load_count=1, model_owner_peak=1, active_generation_peak=2, and ipc_peak=2. These are fake-dependency owner observations, not evidence that BGE weights loaded. Cleanup completed, and none of the 95 observed process IDs remained at the final check. This is not a real BGE, cloud API, public-network, quality, or formal-capacity result.
+## Deployment and official task snapshot
 
-The implementation owner reported the one 23-file matrix finishing in 346.24 seconds with 446 passes, two failures, and four skips. Both failures occurred before the copy-probe body ran: the selected basetemp was outside the system TEMP directory required by an existing helper, producing ValueError. Without changing the tested source, a separate default-TEMP run of only those two tests passed in 13.53 seconds. The full matrix was not rerun. Preserve both observations; do not present them as one clean run.
+On November 3, 2026 at 07:31 UTC, the repaired 1.8.1 service was started in place using the recovered storage root and the existing public endpoint. Local and public health returned HTTP 200 with ready state and version AMC-ENTRY-1.8.1. Unauthenticated and invalid-body checks returned HTTP 401 and 422.
 
-The limited 13-file Mypy check reported 43 errors in four source files. The owner compared those files with 1.5 and found them unchanged or changed only in their version string; two newly introduced diagnostic typing errors had been fixed. Mypy is not reported as passing.
+The existing official Smoke task was resumed through its actual website control. In the package-preparation snapshot, Add, Search and answer stages were complete and scoring was running at 20 of 46. Its historical version label and original concurrency settings remained attached to the original task. This is not a newly created 1.8 task or a completed Smoke result.
 
-The implementation owner froze the 219-file implementation at private evidence commit 9a6bb842094bdf3091c0086b8ad6b6bda6b72b54. Its source manifest contains 219 Python files and 3,250,420 bytes; SHA256 is 9A9846B469824F02E6EBA69118FF7E2EB9EC7F6BE16DF3F3F2CC20CA0D714063. All listed frozen file bytes and the three real-gate source pins were verified after the run. This independent package contains only 54 required runtime files, all byte-equal to that freeze. The private evidence commit is not a published package commit and its Git history is not included.
+No passed Smoke, accepted Full, completed Full or leaderboard score is claimed. Endpoint reachability, a successful local recovery and version registration are separate facts.
 
-## One local real BGE/provider gate
+## Historical evidence
 
-The unique new-root 1.6 gate completed as one passing pytest case in 122.51 seconds. The original report is 36,890 bytes with SHA256 A6B12C32C57B8E2AE2D033FDBAEE6BBF16BAF13BB26136FA325BB2A80BD60B42. Its UTC strings are 2026-11-01T20:07:52.164612+00:00 through 2026-11-01T20:09:53.727782+00:00. The report records monotonic runner wall time 122.469 seconds, model startup 10.312 seconds, and request-wave work 109.781 seconds; the overall 600-second cooperative budget was not exceeded.
+The unchanged earlier validation narrative is retained as VALIDATION-1.6.md. JOB17.md, PATCH18.md and their metadata-only JSON reports retain their earlier results and limitations. Their counts and source closures describe those historical packages, not the new 202-file source inventory.
 
-The workload sent 32 ASGI HTTP requests: sixteen Add and sixteen Search for sixteen synthetic users and sessions. Four Add batches contained two messages, for twenty messages total. Every Search used the same 292-character query and top_k=100. All 32 responses were valid HTTP 200, own-marker isolation checks passed, and all request owners were observed idle. Maximum HTTP durations were 83.047 seconds for Add and 26.640 seconds for Search; maximum owner end-to-end durations were 83.047 and 26.625 seconds respectively, within each original 100-second request deadline.
-
-All nine report gates were true. A single BGE owner recorded load_count=1, model_owner_peak=1, active_generation_peak=2, ipc_peak=2, and 32 total generations. Final model owner count, active generation count, IPC in-flight count, and current generation were all zero; active_generations was empty, clean_close=true, and failed=false. Both lane diagnostics were stopped with no failures. Failure, cleanup-failure, report-failure, and orphan-phase fields were empty/zero.
-
-There were 214 valid memory samples: observed peak runner/descendant RSS was 3,063,980,032 bytes, and observed minimum machine-available memory was 8,137,244,672 bytes. There was no sampling error or sampled resource stop. These are sampled observations, not hard OS memory bounds or universal capacity guarantees.
-
-The report hash, request records, counter consistency, cleanup, diagnostic scope, and source pins received an independent read-only native/security ResultGo for this bounded local gate. Report diagnostics contain relative source frames, closed error classes and numeric OS codes; no request text, user IDs, provider configuration or credential values were found in the reviewed report. The report and private logs are not redistributed in this package.
-
-The implementation owner also reported a passing minimal-package import check covering 46 modules, with no project import escaping the package and no model or service constructed. This import check is not a fresh dependency installation or a service startup test.
-
-## Separate isolated HTTPS probe
-
-After the local gate, the implementation owner started a separate candidate service on loopback port 8796 with its own temporary HTTPS tunnel, leaving the accepted service on port 8795 and its tunnel and official binding unchanged. The seven-request probe passed in 24.672 seconds through actual TLS. Health reported AMC-ENTRY-1.6; the unauthorized request returned HTTP 401. Two Add requests completed in 16.125 and 21.204 seconds, the same-ID retry in 0.421 seconds, and two Search requests in 0.672 and 1.094 seconds. Responses and own-marker isolation were validated.
-
-The probe used the [temporary candidate HTTPS endpoint](https://oldest-actual-newest-adding.trycloudflare.com). A Quick Tunnel may change or expire and has no availability guarantee. The probe proves the tested request chain at that time, not 24-hour uptime, formal input sizes, full-dataset throughput, an organizer-approved binding, or an official Smoke/Full result. No credential or synthetic message/marker is included here.
-
-## Checks not completed by this package preparation
-
-- A fresh Windows/Python installation from the included dependency pins; the separate import and startup/HTTPS checks used the existing reference environment.
-- Long-running operational behavior and 24-hour public HTTPS availability.
-- Formal input sizes, full-dataset storage and throughput, and measured quality improvement.
-- Organizer version/capacity review, approved version binding, official Smoke, official Full, and public-board review.
-
-Package preparation itself started no model, provider, service, tunnel, or official evaluation. The local real-model gate above was the separately authorized implementation run. No previous failure was converted into a pass, and the original task/state was not copied into this package.
+Private raw data, payloads, credentials, IDs, endpoints, recovery manifests and receipts are not redistributed here. SOURCE_MANIFEST.json contains only relative paths, byte lengths and source digests. This snapshot is bounded evidence, not a promise that every possible defect was found.

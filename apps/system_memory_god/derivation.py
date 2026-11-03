@@ -8,6 +8,7 @@ import json
 import hashlib
 from typing import Awaitable, Callable, Generator, Protocol, TypeVar
 
+from kernel.challenge_diagnostics import DiagnosticError, emit_failure
 from kernel.memory_pipeline_models import PipelineScope, SourceRevision, canonical, identity
 from kernel.raw_message_models import DerivationSpec, ResultAnchor, Scope, StoredMessage
 from kernel.raw_message_store import RawMessageStore
@@ -124,9 +125,9 @@ class StructuredDailyExtractor:
         expected = next((spec for spec in daily_specs(self.model) if spec.target_domain == domain), None)
         if (expected is None or (source.processor, source.processor_version, source.model, source.prompt_hash)
                 != (expected.processor, expected.processor_version, expected.model, expected.prompt_hash)):
-            raise ValueError("unregistered extraction version")
+            raise DiagnosticError("source_budget", "unregistered extraction version")
         if type(max_output_tokens) is not int or not 1 <= max_output_tokens <= 2048:
-            raise ValueError("invalid extraction budget")
+            raise DiagnosticError("source_budget", "invalid extraction budget")
         response = await self.client.chat.completions.create(
             model=self.model, max_tokens=max_output_tokens, temperature=0,
             response_format={"type": "json_object"}, messages=[
@@ -134,15 +135,23 @@ class StructuredDailyExtractor:
                 {"role": "user", "content": canonical({"role": message.role,
                     "created_at": message.created_at, "content": message.content})},
             ])
-        choice = response.choices[0]
-        if choice.finish_reason != "stop" or not isinstance(choice.message.content, str):
-            raise ValueError("incomplete extraction")
+        try:
+            choice = response.choices[0]
+        except (AttributeError, IndexError, TypeError):
+            raise DiagnosticError("finish", "incomplete extraction") from None
+        if choice.finish_reason != "stop":
+            raise DiagnosticError("finish", "incomplete extraction")
+        if not isinstance(choice.message.content, str):
+            raise DiagnosticError("content", "incomplete extraction")
         if len(choice.message.content) > 128000:
-            raise ValueError("extraction response too large")
-        result = json.loads(choice.message.content)
+            raise DiagnosticError("content", "extraction response too large")
+        try:
+            result = json.loads(choice.message.content)
+        except ValueError:
+            raise DiagnosticError("json", "invalid extraction JSON") from None
         if (type(result) is not dict or set(result) != {"outputs"}
                 or type(result["outputs"]) is not list or len(result["outputs"]) > 10):
-            raise ValueError("invalid extraction response")
+            raise DiagnosticError("group_shape", "invalid extraction response")
         for payload in result["outputs"]:
             validate_payload(domain, payload)
         return tuple(result["outputs"])
@@ -316,7 +325,8 @@ class DailyDerivation:
                     if online:
                         raise _RecoveryGenerationChanged("recovery generation changed")
                     raise ValueError("Raw generation changed during recovery")
-            except (ValueError, RuntimeError):
+            except (ValueError, RuntimeError) as error:
+                emit_failure("prepare", error)
                 if snapshot["state"] in {"INITIALIZING", "READY"}:
                     await _settle_write(asyncio.to_thread(
                         registry.incomplete, scope, generation=snapshot["generation"]))
@@ -345,9 +355,9 @@ class DailyDerivation:
                                 task["processor"], task["processor_version"],
                                 task["model"], task["prompt_hash"])
         if task["revision"] != message.revision or task["message_id"] != message.message_id:
-            raise ValueError("stale derivation source")
+            raise DiagnosticError("source_budget", "stale derivation source")
         if scope.key != (message.user_id, message.agent_id, message.connector_id, message.conversation_id):
-            raise ValueError("derivation scope mismatch")
+            raise DiagnosticError("source_budget", "derivation scope mismatch")
         domain, fence, token = task["target_domain"], task["attempts"], task["lease_token"]
         registry = self.stores.partition_registry()
         await guard()
@@ -372,7 +382,7 @@ class DailyDerivation:
             else:
                 outputs = await self.extractor.extract(domain, message, source, 2048)
             if type(outputs) is not tuple or len(outputs) > 100:
-                raise ValueError("invalid extraction batch")
+                raise DiagnosticError("group_shape", "invalid extraction batch")
             encoded = tuple(validate_payload(domain, payload) for payload in outputs)
             empty_reason = "policy_blocked" if blocked else "not_applicable" if not outputs else ""
         async with self.stores.gate(scope):
@@ -381,7 +391,7 @@ class DailyDerivation:
             run = await _settle_write(asyncio.to_thread(runs.get, source.task_id))
             if run is None:
                 if encoded is None:
-                    raise ValueError("frozen extraction disappeared")
+                    raise DiagnosticError("prepare", "frozen extraction disappeared")
                 run = await _settle_write(asyncio.to_thread(
                     runs.prepare, source, domain, encoded, fence, token,
                     empty_reason=empty_reason))
@@ -392,7 +402,7 @@ class DailyDerivation:
                     "processor_version": source.processor_version, "model": source.model,
                     "prompt_hash": source.prompt_hash,
                 } or run["domain"] != domain:
-                    raise ValueError("frozen extraction conflict")
+                    raise DiagnosticError("prepare", "frozen extraction conflict")
                 run = await _settle_write(asyncio.to_thread(
                     runs.resume, source.task_id, fence, token))
             evidence = self.stores.evidence(scope)
@@ -427,7 +437,7 @@ class DailyDerivation:
                 if (type(raw_state) is not tuple or len(raw_state) != 2
                         or type(raw_state[0]) is not int or raw_state[0] < 0
                         or type(raw_state[1]) is not bool):
-                    raise ValueError("invalid Raw completion proof")
+                    raise DiagnosticError("published", "invalid Raw completion proof")
                 if raw_state[1]:
                     partition = self.stores.partition(scope)
                     ledger_present = (partition / "source_ledger.db").is_file()

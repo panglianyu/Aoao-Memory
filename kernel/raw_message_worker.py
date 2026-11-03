@@ -2,8 +2,11 @@
 
 import asyncio
 import uuid
+from collections.abc import Mapping
+from types import MappingProxyType
 from typing import Callable, Protocol, TypeVar
 
+from kernel.challenge_diagnostics import DiagnosticError, emit_failure
 from kernel.memory_pipeline_models import PipelineScope
 from kernel.raw_message_models import ConflictError, Scope
 from kernel.raw_message_store import RawMessageStore
@@ -20,7 +23,10 @@ class RawMessageWorker:
                  lease_seconds: int = 60, max_attempts: int = 3, concurrency: int = 2,
                  task_timeout: int = 120, max_input_chars: int = 32000,
                  blocked_scopes: frozenset[Scope] = frozenset(),
-                 on_settled: Callable[[PipelineScope, str], None] | None = None):
+                 on_settled: Callable[[PipelineScope, str], None] | None = None,
+                 selected_claims: Mapping[str, int] | None = None,
+                 selected_sources: Mapping[str, Mapping[str, object]] | None = None,
+                 on_failure: Callable[[], None] | None = None):
         for value, lower, upper in ((lease_seconds, 3, 3600), (max_attempts, 1, 10),
                                     (concurrency, 1, 16), (task_timeout, 1, 3600),
                                     (max_input_chars, 1, 128000)):
@@ -36,6 +42,23 @@ class RawMessageWorker:
             raise ValueError("invalid blocked worker scopes")
         if on_settled is not None and not callable(on_settled):
             raise ValueError("invalid settlement notification")
+        if on_failure is not None and not callable(on_failure):
+            raise ValueError("invalid failure notification")
+        self.on_failure = on_failure
+        if selected_claims is not None:
+            if not selected_claims or len(selected_claims) > 18:
+                raise ValueError("invalid selected recovery claims")
+            for task_id, attempt in selected_claims.items():
+                if (type(task_id) is not str or not task_id or len(task_id) > 256
+                        or type(attempt) is not int or not 1 <= attempt < 2**63 - 1):
+                    raise ValueError("invalid selected recovery claim")
+        self.selected_claims = (MappingProxyType(dict(selected_claims))
+                                if selected_claims is not None else None)
+        if selected_sources is not None and (selected_claims is None or set(selected_sources) != set(selected_claims)):
+            raise ValueError("invalid selected recovery sources")
+        self.selected_sources = (MappingProxyType({key: MappingProxyType(dict(row))
+                                 for key, row in selected_sources.items()})
+                                 if selected_sources is not None else None)
         self.store, self.bus, self.scopes = store, bus, scopes
         self.blocked_scopes = blocked_scopes
         self.lease_seconds, self.max_attempts, self.concurrency = lease_seconds, max_attempts, concurrency
@@ -113,7 +136,11 @@ class RawMessageWorker:
                             continue
                         task = await self._raw_io(
                             self.store.claim_partition, scope, self.worker_id,
-                            lease_seconds=self.lease_seconds, max_active=self.concurrency)
+                            lease_seconds=self.lease_seconds, max_active=self.concurrency,
+                            **({"selected_attempts": self.selected_claims}
+                               if self.selected_claims is not None else {}),
+                            **({"selected_sources": self.selected_sources}
+                               if self.selected_sources is not None else {}))
                         if task is not None:
                             running.append(asyncio.create_task(self._execute(scope, task)))
                     return sum(await asyncio.gather(*running))
@@ -141,7 +168,7 @@ class RawMessageWorker:
             if message is None or message.revision != task["revision"]:
                 raise ConflictError("source unavailable")
             if len(message.content) > self.max_input_chars:
-                raise ValueError("derivation input budget exceeded")
+                raise DiagnosticError("source_budget", "derivation input budget exceeded")
 
             async def complete(results):
                 await self._raw_io(self.store.complete, *args, results)
@@ -156,8 +183,11 @@ class RawMessageWorker:
                 await guard()
 
         job = renewal = None
+        attempt_limit = (self.selected_claims[task["task_id"]] + 1
+                         if self.selected_claims is not None else self.max_attempts)
         try:
-            if task["attempts"] > self.max_attempts:
+            if (task["attempts"] > attempt_limit
+                    or self.selected_claims is not None and task["attempts"] != attempt_limit):
                 await self._raw_io(self.store.fail, *args, "processor_error")
                 return 0
             job = asyncio.create_task(execute())
@@ -174,20 +204,28 @@ class RawMessageWorker:
                 try:
                     self.on_settled(partition, task["task_id"])
                     self.notification_error = ""
-                except Exception:
+                except Exception as error:
                     # A cache notification cannot undo committed Raw or Outbox.
+                    emit_failure("published", error, domain=task.get("target_domain"), attempt=task.get("attempts"))
                     self.notification_error = "notification_failed"
             return 1
         except asyncio.CancelledError:
             # Keep the lease for expiry recovery; cancelled to_thread IO can still finish.
             raise
         except Exception as error:
+            emit_failure("prepare", error, domain=task.get("target_domain"), attempt=task.get("attempts"))
+            if self.on_failure is not None:
+                try:
+                    self.on_failure()
+                except Exception:
+                    self.notification_error = "failure_notification_failed"
             self.last_error = ("timeout" if isinstance(error, TimeoutError) else
                                "invalid_output" if isinstance(error, ValueError) else "processor_error")
             if not isinstance(error, ConflictError):
                 try:
                     await self._raw_io(self.store.fail, *args, self.last_error,
-                        retry_after=min(300, 2 ** task["attempts"]) if task["attempts"] < self.max_attempts else None)
+                        retry_after=min(300, 2 ** task["attempts"])
+                        if task["attempts"] < attempt_limit else None)
                 except ConflictError:
                     pass
             return 0
@@ -234,7 +272,11 @@ class RawMessageWorker:
                         try:
                             task = await self._raw_io(
                                 self.store.claim_partition, scope, self.worker_id,
-                                lease_seconds=self.lease_seconds, max_active=self.concurrency)
+                                lease_seconds=self.lease_seconds, max_active=self.concurrency,
+                                **({"selected_attempts": self.selected_claims}
+                                   if self.selected_claims is not None else {}),
+                                **({"selected_sources": self.selected_sources}
+                                   if self.selected_sources is not None else {}))
                             if task is not None:
                                 active[asyncio.create_task(self._execute(scope, task))] = scope
                         except Exception:

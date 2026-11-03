@@ -94,7 +94,7 @@ class TurnReply(str):
 
 
 class RawMessageService:
-    def __init__(self, profile: RawMessageProfile):
+    def __init__(self, profile: RawMessageProfile, *, selected_claims=None, selected_sources=None, on_failure=None):
         self.profile = profile
         self.store = RawMessageStore(profile.database)
         self._closed = False
@@ -103,6 +103,10 @@ class RawMessageService:
         self._lock = asyncio.Lock()
         self._inflight: set[asyncio.Task] = set()
         self.worker: RawMessageWorker | None = None
+        self._selected_claims = dict(selected_claims) if selected_claims is not None else None
+        self._selected_sources = ({key: dict(row) for key, row in selected_sources.items()}
+                                  if selected_sources is not None else None)
+        self._on_failure = on_failure
         self.memory_service: MemoryServiceContract | None = None
 
     def start_worker(self, bus, *, blocked_scopes: frozenset[Scope] = frozenset(),
@@ -115,7 +119,12 @@ class RawMessageService:
             raise RawMessageError("worker processor unavailable")
         self.worker = RawMessageWorker(self.store, bus, self.configured_scopes(),
                                        max_input_chars=self.profile.derivation_input_chars,
-                                       blocked_scopes=blocked_scopes, on_settled=on_settled)
+                                       blocked_scopes=blocked_scopes, on_settled=on_settled,
+                                       **({"selected_claims": self._selected_claims}
+                                          if self._selected_claims is not None else {}),
+                                       **({"selected_sources": self._selected_sources}
+                                          if self._selected_sources is not None else {}),
+                                       **({"on_failure": self._on_failure} if self._on_failure is not None else {}))
         self.worker.start()
 
     def configured_scopes(self) -> tuple[Scope, ...]:

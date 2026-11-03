@@ -35,7 +35,17 @@ class ChallengeLanes:
             embedding_owner=embedding_owner, add_timeout=add_timeout,
             service_factory=service_factory, store=store,
             cache_observer=partial(self._cache_event, lane),
-            observer=partial(self._phase, lane)) for lane in range(self.lane_count))
+            observer=partial(self._phase, lane), failure_observer=self._fail_closed)
+            for lane in range(self.lane_count))
+
+    def _fail_closed(self) -> None:
+        if self._failed:
+            return
+        self._failed = True
+        for lane in self._lanes:
+            lane._block()
+        if self._admission is not None:
+            self._admission.fail_closed(RuntimeError("challenge lifecycle unavailable"))
 
     def bind_admission(self, admission: BoundedAdmission) -> None:
         if self._admission is not None or any(lane.busy or lane.cache_user is not None

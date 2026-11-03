@@ -13,6 +13,7 @@ import sqlite3
 import time
 from typing import Callable
 
+from kernel.challenge_diagnostics import DiagnosticError
 from kernel.memory_pipeline_models import PipelineScope, SourceRevision, canonical, derived_memory_id, identity
 from kernel.daily_memory_contracts import MAX_MEMORY_QUERY_CHARS
 from .pipeline_database import PipelineDatabase, paged_rows
@@ -36,14 +37,14 @@ _FIELDS = {
 
 def validate_payload(domain: str, payload: dict) -> str:
     if type(domain) is not str or domain not in _FIELDS or type(payload) is not dict:
-        raise ValueError("invalid evidence payload")
+        raise DiagnosticError("domain_payload", "invalid evidence payload")
     if set(payload) != _FIELDS[domain]:
-        raise ValueError("invalid evidence fields")
+        raise DiagnosticError("domain_payload", "invalid evidence fields")
     for key, value in payload.items():
         if key in {"occurred_at", "scheduled_at"} and value is None:
             continue
         if type(value) is not str or not value.strip() or len(value) > 8192:
-            raise ValueError("invalid evidence value")
+            raise DiagnosticError("domain_payload", "invalid evidence value")
         try:
             value.encode("utf-8")
             if key in {"occurred_at", "scheduled_at"}:
@@ -51,9 +52,9 @@ def validate_payload(domain: str, payload: dict) -> str:
                 if stamp.utcoffset() is None:
                     raise ValueError()
         except (ValueError, UnicodeError):
-            raise ValueError("invalid evidence value") from None
+            raise DiagnosticError("domain_payload", "invalid evidence value") from None
     if domain == "rule" and payload["status"] != "candidate":
-        raise ValueError("rule promotion forbidden")
+        raise DiagnosticError("domain_payload", "rule promotion forbidden")
     return canonical(payload)
 
 
@@ -164,9 +165,9 @@ class DerivedEvidenceStore:
 
     def put_batch(self, source: SourceRevision, domain: str, payloads: tuple[dict, ...]) -> list[dict]:
         if type(payloads) is not tuple or len(payloads) > 100:
-            raise ValueError("invalid evidence batch")
+            raise DiagnosticError("domain_payload", "invalid evidence batch")
         if sum(len(validate_payload(domain, value)) for value in payloads) > 2 * 1024 * 1024:
-            raise ValueError("evidence batch too large")
+            raise DiagnosticError("domain_payload", "evidence batch too large")
         with self._db.transaction() as db:
             return [self._put(db, source, domain, index, payload)
                     for index, payload in enumerate(payloads)]
@@ -175,9 +176,9 @@ class DerivedEvidenceStore:
     def _put(db: sqlite3.Connection, source: SourceRevision, domain: str, index: int,
              payload: dict) -> dict:
         if type(source) is not SourceRevision:
-            raise ValueError("invalid evidence source")
+            raise DiagnosticError("source_budget", "invalid evidence source")
         if type(index) is not int or not 0 <= index < 100:
-            raise ValueError("invalid evidence index")
+            raise DiagnosticError("source_budget", "invalid evidence index")
         encoded = validate_payload(domain, payload)
         source_json = canonical(asdict(source))
         memory_id = derived_memory_id(source.task_id, index)
@@ -187,7 +188,7 @@ class DerivedEvidenceStore:
         old = db.execute("SELECT * FROM derived_evidence WHERE memory_id=?", (memory_id,)).fetchone()
         if old is not None:
             if old[:8] != values:
-                raise ValueError("evidence conflict")
+                raise DiagnosticError("prepare", "evidence conflict")
             return DerivedEvidenceStore._record(old)
         row = (*values, datetime.now(timezone.utc).isoformat())
         db.execute("INSERT INTO derived_evidence VALUES (?,?,?,?,?,?,?,?,?)", row)
@@ -280,7 +281,7 @@ class DerivedEvidenceStore:
     @staticmethod
     def _record(row: tuple) -> dict:
         if hashlib.sha256(row[5].encode()).hexdigest() != row[6]:
-            raise ValueError("evidence integrity failure")
+            raise DiagnosticError("cache_integrity", "evidence integrity failure")
         return {"memory_id": row[0], "task_id": row[1], "output_index": row[2],
                 "domain": row[3], "store_ref": row[4], "payload": json.loads(row[5]),
                 "payload_hash": row[6], "source": json.loads(row[7]), "created_at": row[8]}

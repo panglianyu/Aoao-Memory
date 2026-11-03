@@ -18,14 +18,15 @@ import subprocess
 import sys
 import time
 from urllib.parse import urlsplit
-from typing import Any, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
+    from kernel.challenge_diagnostics import DiagnosticSink
     from system_memory_god.storage.shared_embedding_owner import SharedEmbeddingOwner
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-ENTRY_VERSION = "AMC-ENTRY-1.8"
+ENTRY_VERSION = "AMC-ENTRY-1.8.1"
 _STORAGE_MARKER_VERSION = "AMC-ENTRY-1.0"
 _MARKER = ".amc-entry-v1"
 _LEASE_FILE = ".amc-entry.lock"
@@ -41,6 +42,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--add-timeout", type=float, default=1700.0)
     parser.add_argument("--shared-embedding", action="store_true")
     parser.add_argument("--runtime-lanes", type=int, choices=(1, 2), default=1)
+    parser.add_argument("--diagnostics-file", type=Path)
     parser.add_argument("--check-config", action="store_true")
     return parser
 
@@ -84,7 +86,8 @@ class _DataRootLease:
     """Hold one non-inheritable Windows file descriptor for this data root."""
 
     def __init__(self, root: Path, descriptor: int):
-        self.root, self.descriptor = root, descriptor
+        self.root = root
+        self.descriptor: int | None = descriptor
 
     @classmethod
     def acquire(cls, root: Path) -> _DataRootLease:
@@ -128,11 +131,13 @@ class _StartupOwner:
 
     def __init__(self, lease: _DataRootLease):
         self.lease, self.runtime, self.client = lease, None, None
+        self.diagnostics: DiagnosticSink | None = None
         self.embedding_owner: SharedEmbeddingOwner | None = None
         _ACTIVE_OWNERS.add(self)
 
     def release_if_empty(self) -> None:
-        if self.runtime is None and self.embedding_owner is None and self.client is None:
+        if (self.runtime is None and self.embedding_owner is None and self.client is None
+                and self.diagnostics is None):
             self.lease.close()
             _ACTIVE_OWNERS.discard(self)
 
@@ -159,6 +164,14 @@ class _StartupOwner:
                 errors.append(error)
             else:
                 self.client = None
+        if (self.diagnostics is not None and self.runtime is None
+                and self.embedding_owner is None and self.client is None):
+            try:
+                await self.diagnostics.close()
+            except BaseException as error:
+                errors.append(error)
+            else:
+                self.diagnostics = None
         self.release_if_empty()
         if errors:
             raise errors[0]
@@ -236,6 +249,12 @@ def _prepare_root(root: Path) -> None:
 
 async def _serve(owner: _StartupOwner, args, api: dict[str, str], bearer: str) -> None:
     try:
+        diagnostic_path = getattr(args, "diagnostics_file", None)
+        if diagnostic_path is not None:
+            from kernel.challenge_diagnostics import DiagnosticSink
+
+            owner.diagnostics = DiagnosticSink(diagnostic_path)
+            await owner.diagnostics.start()
         import uvicorn
         from openai import AsyncOpenAI
         from system_memory_god.challenge_api import create_app
@@ -283,6 +302,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.runtime_lanes == 2 and not args.shared_embedding:
         raise ValueError("two runtime lanes require shared embedding")
     root = _validate_root(args.data_root)
+    if args.diagnostics_file is not None:
+        diagnostic_file = _private_path(args.diagnostics_file)
+        if (diagnostic_file.parent != root / "diagnostics"
+                or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,80}\.jsonl", diagnostic_file.name)):
+            raise ValueError("diagnostic must be a JSONL file in the owned diagnostics directory")
+        args.diagnostics_file = diagnostic_file
     credential_file = _private_path(args.token_file)
     if not credential_file.is_relative_to(root) or credential_file == root:
         raise ValueError("credential must belong to the private competition root")
@@ -304,7 +329,7 @@ def main(argv: list[str] | None = None) -> int:
         os.environ["TRANSFORMERS_OFFLINE"] = "1"
         for path in (PROJECT_ROOT, PROJECT_ROOT / "apps"):
             sys.path.insert(0, str(path))
-        asyncio.run(_serve(owner, args, api, bearer))
+        asyncio.run(_serve(owner, args, api, cast(str, bearer)))
     finally:
         # Before async resources exist this also handles configuration/import failure.
         # Failed runtime/client closes retain both their owner and the same lease FD.
