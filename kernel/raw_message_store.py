@@ -1421,6 +1421,23 @@ class RawMessageStore:
         with self._db() as db:
             return query_raw_partition_state(db, scope)
 
+    def partition_publication_state(self, scope: Scope) -> tuple[int, bool, bool]:
+        """Include current source failure in the same committed Raw snapshot."""
+        _scope(scope)
+        if scope.connector_id is None or scope.conversation_id is None:
+            raise ScopeError("complete conversation scope required")
+        with self._db() as db:
+            generation, resolved = query_raw_partition_state(db, scope)
+            failed = db.execute(
+                """SELECT 1 FROM derivation_outbox d
+                JOIN raw_messages m USING(message_id)
+                WHERE m.agent_id=? AND m.user_id=? AND m.connector_id=?
+                AND m.conversation_id=? AND m.status IN ('active','edited')
+                AND d.revision=m.revision AND d.status='failed' LIMIT 1""",
+                (scope.agent_id, scope.user_id, scope.connector_id, scope.conversation_id),
+            ).fetchone()
+            return generation, resolved, failed is not None
+
     def partition_derivation_inventory(self, scope: Scope) -> tuple[dict, ...]:
         """Current-revision Outbox rows and anchors in one Raw read transaction.
 

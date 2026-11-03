@@ -1,9 +1,9 @@
 {
   "project": "aru memory",
-  "entry_version": "AMC-ENTRY-1.8.1",
-  "role": "exact-deployed-source-audit-set",
+  "entry_version": "AMC-ENTRY-1.8.2",
+  "role": "candidate-source-audit-set",
   "source_count": 202,
-  "source_bytes": 3057228,
+  "source_bytes": 3061580,
   "source_files": [
     {
       "bytes": 1032,
@@ -33,7 +33,7 @@
     {
       "bytes": 14829,
       "path": "Tools/serve_memory_challenge.py",
-      "sha256": "97a9905121fce56d3f3297e13035bf3e2730d3af28068d5ca8f29c83d75cf2f0"
+      "sha256": "4fcd041371642d24d56d2517ae4146ab205082769eb3e5976694d9907a80e2e4"
     },
     {
       "bytes": 14701,
@@ -48,7 +48,7 @@
     {
       "bytes": 11209,
       "path": "apps/system_memory_god/challenge_api.py",
-      "sha256": "aa68a0f533360cf0cde0aff9481dfd87cee9fb2622d8cb2bca348884891af8c6"
+      "sha256": "8f00e8404050632b3efd3a8bb86e8a0d1953f82e24fa70626da410068d57583c"
     },
     {
       "bytes": 18004,
@@ -101,9 +101,9 @@
       "sha256": "3c19e62fbc72207c917889de75a534dd8fce3bd9d6bfbaf10c33edf2be8c1a23"
     },
     {
-      "bytes": 32873,
+      "bytes": 33017,
       "path": "apps/system_memory_god/daily_runtime.py",
-      "sha256": "68f036f4f8ab213d9b8462ef58a68a62cb2ad15c5c8ec850e3cb75c8b774c96d"
+      "sha256": "7fc4e1f35ebe20db2ab90880d7f048b3def12a7eebca51d0641dec104c8846ea"
     },
     {
       "bytes": 25340,
@@ -116,9 +116,9 @@
       "sha256": "936268512e80ff89c9010f71c684c45477b99e3630a50d31788c7ec267490721"
     },
     {
-      "bytes": 7881,
+      "bytes": 11100,
       "path": "apps/system_memory_god/grouped_extractor.py",
-      "sha256": "4fec34bff2448bfdaa1e9b31ca28381c4f845c6d12585099880e2580d9f7f107"
+      "sha256": "4838ffd9527d1789aac71b854e4550dd8ac00e0928a15e27b0258774a9fd5df6"
     },
     {
       "bytes": 36512,
@@ -606,9 +606,9 @@
       "sha256": "8103eb8bb7bcfcb032584f89296be5bb682f40cb528222bec7c6e76a22b90575"
     },
     {
-      "bytes": 83451,
+      "bytes": 84440,
       "path": "kernel/raw_message_store.py",
-      "sha256": "9a08b92240dbecbda6081617ec79afc38a62dec2383837cf112f7d7ef0ec7870"
+      "sha256": "e3105dde49b42779387220302671e752374250eeb02470c59c8eaa514f9bd328"
     },
     {
       "bytes": 8392,

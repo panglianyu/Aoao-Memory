@@ -181,7 +181,7 @@ class DailyMemoryRuntime:
             result.update(status="unavailable", reason="metadata_deadline" if remaining <= 0
                           else "metadata_capacity")
             return result
-        pending = asyncio.create_task(asyncio.to_thread(self.raw.store.partition_state, scope))
+        pending = asyncio.create_task(asyncio.to_thread(self.raw.store.partition_publication_state, scope))
         self._semantic_metadata.add(pending)
 
         def settled(task: asyncio.Task) -> None:
@@ -191,7 +191,7 @@ class DailyMemoryRuntime:
 
         pending.add_done_callback(settled)
         try:
-            generation, resolved = await asyncio.wait_for(asyncio.shield(pending), remaining)
+            generation, resolved, raw_failed = await asyncio.wait_for(asyncio.shield(pending), remaining)
         except (OSError, ValueError, RuntimeError, TimeoutError, asyncio.TimeoutError):
             result.update(status="unavailable", reason="metadata_unavailable")
             return result
@@ -213,6 +213,8 @@ class DailyMemoryRuntime:
                           else "unavailable", reason="runtime_unavailable")
         elif publisher_failed:
             result.update(status="unavailable", reason="semantic_publisher_failed", terminal=True)
+        elif raw_failed:
+            result.update(status="unavailable", reason="derived_unavailable", terminal=True)
         elif partition in self._semantic_failed and self._semantic_attempts.get(partition, 0) >= 3:
             result.update(status="unavailable", reason="publication_attempts_exhausted", terminal=True)
         elif partition in self._semantic_failed or not reader.available(partition):

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 import hashlib
 import json
 from urllib.parse import urlsplit
@@ -28,6 +29,44 @@ _VECTOR_HASH = hashlib.sha256(
     b"fast offsets; special-inclusive tokens<=8192; chars<=8192; chunks<=10; no LLM"
 ).hexdigest()
 _GROUP_HASH = hashlib.sha256(_GROUP_PROMPT.encode()).hexdigest()
+_REPAIRABLE = frozenset({"json", "group_shape", "domain_payload"})
+_CORRECTION = (
+    "Validation feedback only, not message evidence. Regenerate the complete extraction solely "
+    "from the original quoted message. The previous generation failed the closed check: {reason}. "
+    "Return only one JSON object with exactly entity, graph, rule, journal and schedule arrays, "
+    "at most 10 records per array, and only the fields shown in the original system contract. "
+    "Every text value must be a nonempty valid Unicode string of at most 8192 characters. "
+    "Each occurred_at or scheduled_at must be null or a complete ISO timestamp with an explicit "
+    "timezone; use null when the original evidence does not determine one unambiguously. "
+    "Every rule status must be candidate. Preserve explicit facts and do not invent evidence."
+)
+
+
+@dataclass
+class _GroupBudget:
+    """Per-instance counters and closed codes only; never retain responses or errors."""
+
+    calls: int = 0
+    feedback: str | None = None
+    failure: tuple[str, str] | None = None
+
+
+def _response_outputs(response):
+    try:
+        choice = response.choices[0]
+    except (AttributeError, IndexError, TypeError):
+        raise DiagnosticError("finish", "incomplete grouped extraction") from None
+    finish_reason = getattr(choice, "finish_reason", None)
+    if finish_reason != "stop":
+        raise DiagnosticError("finish", "incomplete grouped extraction", finish_reason=finish_reason)
+    content = getattr(getattr(choice, "message", None), "content", None)
+    if type(content) is not str or len(content) > 128000:
+        raise DiagnosticError("content", "incomplete grouped extraction")
+    try:
+        decoded = json.loads(content)
+    except ValueError:
+        raise DiagnosticError("json", "invalid grouped extraction JSON") from None
+    return validate_group(decoded)
 
 
 def provider_request_options(provider_base_url: str | None) -> dict:
@@ -63,6 +102,7 @@ class GroupedDailyExtractor:
         self.stores, self.client, self.model = stores, client, model
         self.provider_base_url = provider_base_url
         self._locks: dict[str, tuple[asyncio.Lock, int]] = {}
+        self._group_budgets: dict[str, _GroupBudget] = {}
 
     @asynccontextmanager
     async def _coalesce(self, key):
@@ -90,6 +130,48 @@ class GroupedDailyExtractor:
         """The recovery owner can fence exact scoped calls without changing extraction identity."""
         return await self.client.chat.completions.create(**request_kwargs)
 
+    async def _generate_group(self, key, scope, source, message, max_output_tokens, guard):
+        budget = self._group_budgets.get(key)
+        if budget is None:
+            if len(self._group_budgets) >= 128:
+                raise DiagnosticError("source_budget", "grouped extraction capacity exceeded")
+            budget = _GroupBudget()
+            self._group_budgets[key] = budget
+        while True:
+            # A saved failure or call counter never substitutes for a live Raw lease.
+            try:
+                await guard()
+            except BaseException:
+                if budget.calls == 0:
+                    self._group_budgets.pop(key, None)
+                raise
+            if budget.calls >= 3:
+                reason, finish = budget.failure or ("source_budget", "unknown")
+                raise DiagnosticError(reason, "grouped extraction budget exhausted", finish_reason=finish)
+            messages = [{"role": "system", "content": _GROUP_PROMPT},
+                {"role": "user", "content": canonical({"role": message.role,
+                    "created_at": message.created_at, "content": message.content})}]
+            if budget.feedback in _REPAIRABLE:
+                # A new, static 1.8.2 repair instruction, not the previous model text.
+                messages.append({"role": "system", "content": _CORRECTION.format(reason=budget.feedback)})
+            # Count before entering the SDK/hook. Cancellation and transport errors
+            # retain this conservative count for other domains and Raw retries.
+            budget.calls += 1
+            response = await self._create_response(scope=scope, source=source,
+                model=self.model, max_tokens=max_output_tokens, temperature=0,
+                response_format={"type": "json_object"}, messages=messages,
+                **provider_request_options(self.provider_base_url))
+            try:
+                return _response_outputs(response)
+            except DiagnosticError as error:
+                closed = DiagnosticError(error.safe_reason, finish_reason=error.safe_finish_reason)
+                budget.failure = (closed.safe_reason, closed.safe_finish_reason)
+                if closed.safe_reason in _REPAIRABLE:
+                    budget.feedback = closed.safe_reason
+                    if budget.calls < 3:
+                        continue
+                raise
+
     async def extract_guarded(self, domain, message, source, max_output_tokens, guard):
         if domain == "vector":
             return await self.extract(domain, message, source, max_output_tokens)
@@ -104,36 +186,19 @@ class GroupedDailyExtractor:
             return ()
         scope = PipelineScope(message.user_id, message.agent_id, message.connector_id, message.conversation_id)
         cache = self.stores.extractions(scope)
-        async with self._coalesce(scope.partition_id + extraction_key(source)):
+        key = scope.partition_id + extraction_key(source) + message.content_hash
+        async with self._coalesce(key):
             async with self.stores.gate(scope):
                 await guard()
                 outputs = await asyncio.to_thread(cache.get, source, message.content_hash)
             if outputs is None:
-                response = await self._create_response(scope=scope, source=source,
-                    model=self.model, max_tokens=max_output_tokens, temperature=0,
-                    response_format={"type": "json_object"}, messages=[
-                        {"role": "system", "content": _GROUP_PROMPT},
-                        {"role": "user", "content": canonical({"role": message.role,
-                            "created_at": message.created_at, "content": message.content})}],
-                    **provider_request_options(self.provider_base_url))
-                try:
-                    choice = response.choices[0]
-                except (AttributeError, IndexError, TypeError):
-                    raise DiagnosticError("finish", "incomplete grouped extraction") from None
-                finish_reason = getattr(choice, "finish_reason", None)
-                if finish_reason != "stop":
-                    raise DiagnosticError("finish", "incomplete grouped extraction", finish_reason=finish_reason)
-                if type(choice.message.content) is not str or len(choice.message.content) > 128000:
-                    raise DiagnosticError("content", "incomplete grouped extraction")
-                try:
-                    decoded = json.loads(choice.message.content)
-                except ValueError:
-                    raise DiagnosticError("json", "invalid grouped extraction JSON") from None
-                outputs = validate_group(decoded)
+                outputs = await self._generate_group(key, scope, source, message, max_output_tokens, guard)
                 # A cache hit is not a lease. The same gate also fences purge.
                 async with self.stores.gate(scope):
                     await guard()
                     await _settle_write(asyncio.to_thread(cache.put, source, domain,
                                                         message.content_hash, outputs))
+            # A durable valid cache has precedence over a previous RAM failure.
+            self._group_budgets.pop(key, None)
             await guard()
             return tuple(outputs[domain])
