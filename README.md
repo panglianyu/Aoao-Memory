@@ -1,14 +1,22 @@
 # aru memory
 
-A Windows Add/Search memory service. AMC-ENTRY-1.8.2 retains original messages and derives vector, entity, graph, rule, journal and schedule evidence with separate user storage. This candidate contains 202 Python source files matched byte-for-byte to the isolated repair checkout. Private configuration, credentials, runtime data, models, operational controls and host-assistant history are excluded.
+A Windows Add/Search memory service. AMC-ENTRY-1.8.4 retains original messages and derives vector, entity, graph, rule, journal and schedule evidence with separate user storage. Its 202 runtime Python files match the frozen isolated candidate byte-for-byte. Private configuration, credentials, runtime data, models, operational controls and host-assistant history are excluded.
 
 ## Candidate status
 
-This patch addresses two failures found during an official Full attempt. A grouped extraction could repeat the same invalid result across its five target domains. A terminal Raw derivation failure could also remain a nonterminal publication state, making synchronous Add wait until its deadline.
+The 1.8.4 policy preserves eligible nonempty time strings as literal text when they cannot represent an absolute instant. The complete original string is appended to valid record text and the timestamp becomes null, within the existing text limit. This includes partial dates, natural language, naive timestamps and invalid calendar strings; they are retained as literals, not certified as valid dates. It deliberately expands accepted input representations. See [PATCH184.md](PATCH184.md) and [VALIDATION-1.8.4.md](VALIDATION-1.8.4.md).
 
-The isolated code now shares a bounded same-source correction budget and propagates current-source terminal failures to the existing Add failure path. Strict validation remains in place: invalid results are not written or acknowledged as success. See [PATCH182.md](PATCH182.md) and [VALIDATION-1.8.2.md](VALIDATION-1.8.2.md).
+Existing parseable timezone-aware instants and null remain unchanged. A strictly recognized, calendar-valid uppercase RFC3339 UTC `Z` form may use its equivalent `+00:00` representation. Other non-string, blank, invalid-Unicode or overlong values, invalid original text and malformed shapes remain rejected. A null timestamp has no absolute-time-window index: retaining the literal in text does not recover a time zone or guarantee temporal recall.
 
-The original official Smoke subsequently completed 46/46. A Full task was then started and failed during Add; later attempts also encountered an unavailable public ingress. Those facts do not establish that this new candidate has passed Smoke or Full. **1.8.2 is not claimed as deployed, formally accepted, recovered against the official data, or ready to resume Full.** A stable ingress and the original task's fixed-version association still need to be resolved.
+The inherited 1.8.2 same-source correction budget and terminal-publication behavior remain documented in [PATCH182.md](PATCH182.md) and [VALIDATION-1.8.2.md](VALIDATION-1.8.2.md). The existing strict validator, base prompt/hash, SDK budget and Raw guards are unchanged; the accepted representation policy around the validator is expanded explicitly.
+
+The first six SDK calls comprised the prior three-call unsuccessful check, one diagnostic, one unsuccessful 1.8.3 validation and one later diagnostic. The unsuccessful validation's reason remained `unknown`; its one-call fence may have obscured the underlying failure. That diagnostic metadata described nine journal time values as `other` with length 4; actual values were not retained, so their content is not known and must not be guessed as years. At that stage, there was no accepted valid result or official recovery.
+
+The bounded 1.8.4 first-request observer has now completed one SDK call and produced a strictly valid grouped result. Root, Python and security result reviews accepted that single-case result, retained as a private artifact. Ten journal time literals were preserved as text with null timestamps. The cumulative total is seven SDK calls; all earlier failures remain in the record. This establishes one selected source's representation check. Semantic QA, new official Smoke, Full success and recovery of the five failed tasks remain unverified; the formal cache and failed-task state were not changed.
+
+One relevant nine-module synthetic matrix passed 193 tests in 25.43 seconds, without skips or model calls. Changed-file Ruff and independent Python, security and Root code reviews accepted the scoped implementation. Limited Mypy retains one existing CLI finding; these synthetic checks alone do not establish real-source or Full success.
+
+The original official Smoke subsequently completed 46/46. A Full task was then started and failed during Add; later attempts also encountered an unavailable public ingress. Those facts do not establish that this new candidate has passed Smoke or Full. **1.8.4 is not claimed as deployed, formally accepted, recovered against the official data, or ready to resume Full.** The ngrok account's dev domain still needs to be claimed, and the original task's endpoint/version association remains unresolved.
 
 Publishing this source does not change the entry's industrial group, grant evaluation quota, or establish compliance with the open-source track's prescribed models. The accepted 1.0 source and 1.8.1 fixed commit remain unchanged. Earlier evidence is retained in [VALIDATION-1.8.1.md](VALIDATION-1.8.1.md), [VALIDATION-1.6.md](VALIDATION-1.6.md), [JOB17.md](JOB17.md), [PATCH18.md](PATCH18.md) and their metadata-only reports.
 
@@ -27,7 +35,7 @@ The documented request deadline is 1700 seconds, including body reading and queu
 Use 64-bit Windows, the Python launcher and Python 3.10. The reference interpreter was 3.10.11. Use a short checkout path.
 
 ~~~powershell
-git clone --branch codex/amc-entry-1.8.2 https://github.com/panglianyu/Aoao-Memory.git
+git clone --branch codex/amc-entry-1.8.4 https://github.com/panglianyu/Aoao-Memory.git
 cd Aoao-Memory
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup.ps1 -Dev
 ~~~
@@ -81,12 +89,12 @@ Use integer Unix milliseconds. Limits include a 2 MiB JSON body, 256 messages, 8
 ## Development
 
 ~~~powershell
-& .\.venv\Scripts\python.exe -m pytest -q tests/test_grouped_extractor_repair.py tests/test_memory_terminal_publication.py
+& .\.venv\Scripts\python.exe -m pytest -q tests/test_grouped_partial_dates.py tests/test_grouped_extractor_repair.py tests/test_memory_terminal_publication.py
 ~~~
 
-The included tests are synthetic and forbid unplanned model loading by default. Operator-recovery fixtures additionally assume the reference short-path Windows scratch layout; they are audit cases, not a portable unattended suite. Maintenance recovery CLIs contain fixed operator paths and are not normal setup or production launch commands. Do not point them at a live data root.
+The command above covers time-representation and inherited correction/publication regressions. The included tests are synthetic and forbid unplanned model loading by default. Operator-recovery fixtures additionally assume the reference short-path Windows scratch layout; they are audit cases, not a portable unattended suite. Maintenance recovery CLIs contain fixed operator paths and are not normal setup or production launch commands. Do not point them at a live data root.
 
-The two regression modules and their static test-import closure are included. Packaging has checked those imports structurally but has not repeated the implementation checkout's regression matrix. See [CONTRIBUTING.md](CONTRIBUTING.md) for changes. [SOURCE_MANIFEST.json](SOURCE_MANIFEST.json) identifies the candidate's exact runtime files; [PACKAGE_MANIFEST.json](PACKAGE_MANIFEST.json) inventories this package without a self-hash cycle.
+The new time module and inherited regression modules are included, with static test-import closure checked. Relative to public 1.8.2, three runtime files have logical changes: grouped extraction and the API/CLI version constants. Twelve additional runtime files differ only in line endings, copied unchanged from the frozen candidate. See [CONTRIBUTING.md](CONTRIBUTING.md) for changes. [SOURCE_MANIFEST.json](SOURCE_MANIFEST.json) identifies the exact runtime files; [PACKAGE_MANIFEST.json](PACKAGE_MANIFEST.json) inventories this package without a self-hash cycle.
 
 ## Using with Codex
 
@@ -94,7 +102,7 @@ Codex reads [AGENTS.md](AGENTS.md) for verified commands, architecture and sourc
 
 ## Remaining limits
 
-Current-candidate deployment, official version association, targeted recovery, stable public ingress, Full completion and full-workload quality remain unproved. The earlier Smoke success belongs to the original resumed task and implementation, not to this candidate. Type-check findings and unrun checks are recorded in [VALIDATION-1.8.2.md](VALIDATION-1.8.2.md). Fresh dependency installation and production privacy acceptance also remain unproved. Packaging ran no new model or evaluation.
+Coverage beyond the single selected real source, deployment, official version association, targeted recovery, stable public ingress, Full completion and full-workload quality remain unproved. The earlier Smoke success belongs to the original resumed task and implementation, not to this candidate. The seven observed SDK calls and actual new checks are recorded in [VALIDATION-1.8.4.md](VALIDATION-1.8.4.md); wider inherited type-check findings remain recorded in [VALIDATION-1.8.2.md](VALIDATION-1.8.2.md). Fresh dependency installation and production privacy acceptance also remain unproved. Packaging ran no model or evaluation.
 
 ## License
 

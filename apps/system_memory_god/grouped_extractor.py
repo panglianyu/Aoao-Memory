@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import datetime
 import hashlib
 import json
+import re
 from urllib.parse import urlsplit
 
 from kernel.challenge_diagnostics import DiagnosticError
@@ -51,6 +53,53 @@ class _GroupBudget:
     failure: tuple[str, str] | None = None
 
 
+def _normalize_partial_dates(outputs):
+    """Preserve uncertain time literals in copied text without inventing an instant."""
+    if type(outputs) is not dict:
+        return outputs
+    normalized = outputs
+    for domain, field in (("journal", "occurred_at"), ("schedule", "scheduled_at")):
+        values = outputs.get(domain)
+        if type(values) is not list or len(values) > 10:
+            continue
+        copied = None
+        for index, payload in enumerate(values):
+            if type(payload) is not dict or set(payload) != {"text", field}:
+                continue
+            stamp, text = payload[field], payload["text"]
+            if (type(stamp) is not str or not stamp.strip() or len(stamp) > 8192
+                    or type(text) is not str or not text.strip() or len(text) > 8192):
+                continue
+            try:
+                text.encode("utf-8")
+                stamp.encode("utf-8")
+            except UnicodeError:
+                continue
+            try:
+                if datetime.fromisoformat(stamp).utcoffset() is not None:
+                    continue
+            except ValueError:
+                pass
+            utc = None
+            if re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?Z", stamp):
+                candidate = stamp[:-1] + "+00:00"
+                try:
+                    if len(candidate) <= 8192 and datetime.fromisoformat(candidate).utcoffset() is not None:
+                        utc = candidate
+                except ValueError:
+                    pass
+            if utc is None and len(text) + 1 + len(stamp) > 8192:
+                continue
+            if copied is None:
+                copied = list(values)
+            copied[index] = {**payload, "text": text if utc is not None else text + "\n" + stamp, field: utc}
+        if copied is not None:
+            if normalized is outputs:
+                normalized = dict(outputs)
+            normalized[domain] = copied
+    return normalized
+
+
 def _response_outputs(response):
     try:
         choice = response.choices[0]
@@ -66,7 +115,7 @@ def _response_outputs(response):
         decoded = json.loads(content)
     except ValueError:
         raise DiagnosticError("json", "invalid grouped extraction JSON") from None
-    return validate_group(decoded)
+    return validate_group(_normalize_partial_dates(decoded))
 
 
 def provider_request_options(provider_base_url: str | None) -> dict:

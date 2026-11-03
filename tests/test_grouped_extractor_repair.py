@@ -98,7 +98,7 @@ async def test_invalid_response_is_corrected_once_and_shared_by_all_domains():
 @pytest.mark.parametrize("bad", [
     "{private-invalid-model-response", "{}",
     json.dumps({**{domain: [] for domain in STRUCTURED_DOMAINS},
-        "journal": [{"text": "event", "occurred_at": "2026-11-04"}]}),
+        "journal": [{"text": "event", "occurred_at": 2026}]}),
 ], ids=["json", "group-shape", "domain-payload"])
 async def test_three_invalid_calls_are_not_repeated_by_other_domains_or_raw_retries(bad):
     stores = Stores()

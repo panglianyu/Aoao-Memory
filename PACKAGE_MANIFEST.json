@@ -1,7 +1,7 @@
 {
   "project": "aru memory",
-  "entry_version": "AMC-ENTRY-1.8.2",
-  "file_count": 250,
+  "entry_version": "AMC-ENTRY-1.8.4",
+  "file_count": 253,
   "files": [
     {
       "path": ".gitattributes",
@@ -25,8 +25,8 @@
     },
     {
       "path": "AGENTS.md",
-      "bytes": 3900,
-      "sha256": "3747b6f1bc55019cad08a57b4e3e34100ef5b79ecd5734cf604b17689622dec2"
+      "bytes": 4642,
+      "sha256": "8a2034fac6425d582dffdef5711207c0ddf2d9b8a1af536d82d24c23fc239ca7"
     },
     {
       "path": "apps/system_memory_god/challenge_admission.py",
@@ -36,17 +36,17 @@
     {
       "path": "apps/system_memory_god/challenge_api.py",
       "bytes": 11209,
-      "sha256": "8f00e8404050632b3efd3a8bb86e8a0d1953f82e24fa70626da410068d57583c"
+      "sha256": "d92c8cdc1248a919e0a6574d99b0ef2f69cef4175638b4bc34729bd608aa8778"
     },
     {
       "path": "apps/system_memory_god/challenge_job_store.py",
-      "bytes": 18004,
-      "sha256": "14a73f86c1e85ee5775c094cfbaa9059e99715d851e853de5f806802557675a8"
+      "bytes": 18389,
+      "sha256": "932aefc314e09bc79de1c3a60188e54ad7ecaa65cc46bc2ee035dfce2e350359"
     },
     {
       "path": "apps/system_memory_god/challenge_jobs.py",
-      "bytes": 15677,
-      "sha256": "217c91902248a94261bca961b6d883623b3995a6e38de5f85cb3db3ce9f30ef3"
+      "bytes": 16017,
+      "sha256": "a3c8ef05fb28e55fd5453a87a25ab5fec3ea8baae56c1873671465b5f11ecf2d"
     },
     {
       "path": "apps/system_memory_god/challenge_lanes.py",
@@ -105,18 +105,18 @@
     },
     {
       "path": "apps/system_memory_god/grouped_extractor.py",
-      "bytes": 11100,
-      "sha256": "4838ffd9527d1789aac71b854e4550dd8ac00e0928a15e27b0258774a9fd5df6"
-    },
-    {
-      "path": "apps/system_memory_god/longmemeval_daily.py",
-      "bytes": 13676,
-      "sha256": "44da0e7c1765ed408589016d2936a878e19724c772f954a30bb4042b1f0c6f60"
+      "bytes": 13227,
+      "sha256": "b03af8b964ca346a9fad31d894fedf3bff7fea8120d2d9ee40c11e58476a75aa"
     },
     {
       "path": "apps/system_memory_god/longmemeval.py",
       "bytes": 36512,
       "sha256": "147467e0a30651484357267c5fa881a30b66f69f6643527eda19ca1fa962e7bb"
+    },
+    {
+      "path": "apps/system_memory_god/longmemeval_daily.py",
+      "bytes": 13676,
+      "sha256": "44da0e7c1765ed408589016d2936a878e19724c772f954a30bb4042b1f0c6f60"
     },
     {
       "path": "apps/system_memory_god/main.py",
@@ -169,14 +169,14 @@
       "sha256": "fd992ca73ed397f588cd60f64d49fbcebb91bae5b2e5e0929fc03c16801a111d"
     },
     {
-      "path": "apps/system_memory_god/storage/daily_vector_snapshot_worker.py",
-      "bytes": 9049,
-      "sha256": "2d46c25cb920bbae5a58ce25a896953eebac852a7188dab9f7ab3b0344478d49"
-    },
-    {
       "path": "apps/system_memory_god/storage/daily_vector_snapshot.py",
       "bytes": 17970,
       "sha256": "801a867fb10653fb03780da37d4df0bae37ce7563f08ca70fc18c6ce79249387"
+    },
+    {
+      "path": "apps/system_memory_god/storage/daily_vector_snapshot_worker.py",
+      "bytes": 9049,
+      "sha256": "2d46c25cb920bbae5a58ce25a896953eebac852a7188dab9f7ab3b0344478d49"
     },
     {
       "path": "apps/system_memory_god/storage/daily_vector_worker.py",
@@ -264,14 +264,14 @@
       "sha256": "f80fe49f453cee2b19ed0577d7913031991757da50cdd96a9b7953fa5dcde1ff"
     },
     {
-      "path": "apps/system_memory_god/storage/supervised_daily_vector_snapshot.py",
-      "bytes": 11737,
-      "sha256": "f63be1691b9e68f0ff6b70060aa38800cb66f1158d5e6e0caabf703ca985a3c7"
-    },
-    {
       "path": "apps/system_memory_god/storage/supervised_daily_vector.py",
       "bytes": 83549,
       "sha256": "c18a0a756e8f2dc0834384f67846502ea9304eedc080538fce8f2ef7ab8dcc20"
+    },
+    {
+      "path": "apps/system_memory_god/storage/supervised_daily_vector_snapshot.py",
+      "bytes": 11737,
+      "sha256": "f63be1691b9e68f0ff6b70060aa38800cb66f1158d5e6e0caabf703ca985a3c7"
     },
     {
       "path": "apps/system_memory_god/storage/token_chunking.py",
@@ -295,8 +295,8 @@
     },
     {
       "path": "CANDIDATE_VERSION",
-      "bytes": 16,
-      "sha256": "5f86a49414225dca1ddd5d37b3e8ff9f065694255b28c664d30054de24430fde"
+      "bytes": 17,
+      "sha256": "c317940e9f74d0fd74957429868fd770b4dadf5908b130baacbef0e7ef65f26f"
     },
     {
       "path": "config/provider.example.json",
@@ -344,6 +344,11 @@
       "sha256": "06703eb5b505cf24278fd39596697bf6b6b846817daad8f1c2656580de1ac170"
     },
     {
+      "path": "kernel/brain.py",
+      "bytes": 132430,
+      "sha256": "b5cd7b88980a3008c358147d9215e4f45bcafe6f60bdb9c66dd110a45e5ab9df"
+    },
+    {
       "path": "kernel/brain_messages.py",
       "bytes": 8835,
       "sha256": "da7a65e3adfd4075735890036ff87f8bee0cbc0b951c964e42640f742c80eb21"
@@ -359,14 +364,9 @@
       "sha256": "3647635d0309fbddae7c118192c5d7354180225d4f6d02783350a3d3d19dde3c"
     },
     {
-      "path": "kernel/brain.py",
-      "bytes": 132430,
-      "sha256": "b5cd7b88980a3008c358147d9215e4f45bcafe6f60bdb9c66dd110a45e5ab9df"
-    },
-    {
       "path": "kernel/challenge_diagnostics.py",
-      "bytes": 17988,
-      "sha256": "365ff5bb57e3083e0946e7a14b50330d6d0c16458935c603dfba012305142b3b"
+      "bytes": 18372,
+      "sha256": "ab4c03f1aed6cd2b163aaba353d2315a685817d2eea8c510da673c62989e149f"
     },
     {
       "path": "kernel/character_registry.py",
@@ -484,6 +484,11 @@
       "sha256": "aa115760cd7e190e932370ffce4e2c99742daebb527c887b14b9b48473740bb2"
     },
     {
+      "path": "kernel/message.py",
+      "bytes": 21589,
+      "sha256": "f502cfbd4dc6e364744c5e67add64e04a375fa8e1bd12b5bfc968ad6cc663fe9"
+    },
+    {
       "path": "kernel/message_pool.py",
       "bytes": 9725,
       "sha256": "1a5d4e258fa5c2929b62e52823eda062859e57a846b0e9a5dfa15854c70a3b25"
@@ -492,11 +497,6 @@
       "path": "kernel/message_reviewer.py",
       "bytes": 15136,
       "sha256": "c71b93e8b8f98df6dfe8802d9a88e1843ad68123fd0151d868928c84f00f5edb"
-    },
-    {
-      "path": "kernel/message.py",
-      "bytes": 21589,
-      "sha256": "f502cfbd4dc6e364744c5e67add64e04a375fa8e1bd12b5bfc968ad6cc663fe9"
     },
     {
       "path": "kernel/model_conversation.py",
@@ -539,14 +539,14 @@
       "sha256": "dc393b3a30e67e9febcaaedd5d392a3b72009ff451e86020326dd44e1cb88a6e"
     },
     {
-      "path": "kernel/project_workspace_io.py",
-      "bytes": 16473,
-      "sha256": "cc402d9a9725fee9a55a6e1930985fbc2a95447be215ac0abaaa7c920a9a9340"
-    },
-    {
       "path": "kernel/project_workspace.py",
       "bytes": 38427,
       "sha256": "6aa35989928007205cb5b65b6afff027d63d50b615ebcb024b22068b03f6d935"
+    },
+    {
+      "path": "kernel/project_workspace_io.py",
+      "bytes": 16473,
+      "sha256": "cc402d9a9725fee9a55a6e1930985fbc2a95447be215ac0abaaa7c920a9a9340"
     },
     {
       "path": "kernel/prompts.py",
@@ -560,8 +560,8 @@
     },
     {
       "path": "kernel/raw_message_clone.py",
-      "bytes": 27741,
-      "sha256": "656de01d012e84906283986bbde4fec02a7e6836ed6a3b36797e6d1a591bb827"
+      "bytes": 28245,
+      "sha256": "20488218c93d896006d1278b400dc15f3d6acac7f48ce1fdd70512d72a716a46"
     },
     {
       "path": "kernel/raw_message_database.py",
@@ -589,14 +589,14 @@
       "sha256": "1c4bf38dde3bb1d009b63aca4326d3e9580a1e463bc8f10c610702f45d5e71f9"
     },
     {
-      "path": "kernel/raw_message_recovery_r2.py",
-      "bytes": 20704,
-      "sha256": "5416028a5eef351381e9f11ab7b4a78d45c3487c3a7dcb3e89dd8dcfb8a5a7b0"
+      "path": "kernel/raw_message_recovery.py",
+      "bytes": 21588,
+      "sha256": "fd657756eb33ad77743db96231d16220c1d622a8a38bbc954b2065c38d5b11a0"
     },
     {
-      "path": "kernel/raw_message_recovery.py",
-      "bytes": 21168,
-      "sha256": "dc7669e029399fee3e89638f47ecc25c730afea5fe80697aa09e129f05e2b66b"
+      "path": "kernel/raw_message_recovery_r2.py",
+      "bytes": 21057,
+      "sha256": "a71f20364a93d4ffdd15df271f49e7f11f8a6ce3afb60b503aa5afea16eeec0b"
     },
     {
       "path": "kernel/raw_message_registry.py",
@@ -964,6 +964,11 @@
       "sha256": "a468f6f78d4cc0edda9bf296d676e6a5f233eeb46ba9a568f4fc61dbe9dc369e"
     },
     {
+      "path": "PATCH184.md",
+      "bytes": 5338,
+      "sha256": "97fb6d7d3494e3a4e078c105da789d186982f9a586724430c8e06121ac6ec374"
+    },
+    {
       "path": "PREPARATION.md",
       "bytes": 2230,
       "sha256": "ab621f70c45ebe5235a7a29fad16477d0ebaf93d94b42f5e81f0d0e1c5b87817"
@@ -1050,8 +1055,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 10034,
-      "sha256": "12a8e808ebd539b69fbbfb9c99e4eaa4d32f1fae8ad60223fff38d4529665b8d"
+      "bytes": 12635,
+      "sha256": "912da2177047266f604423a8564f9c2e9b541d2e5ac725812d1f0697af431879"
     },
     {
       "path": "requirements-dev.txt",
@@ -1071,7 +1076,7 @@
     {
       "path": "SOURCE_MANIFEST.json",
       "bytes": 35092,
-      "sha256": "f538b0fb9fd2eb00028aa2938213cb2a5c3d635d4b3b59c0496dfaab4255bb88"
+      "sha256": "5ab96e38fc8b4f280ea0955f3536e4e9b6096ea70b748b3f5f7ecf3089fe3139"
     },
     {
       "path": "tests/__init__.py",
@@ -1085,8 +1090,8 @@
     },
     {
       "path": "tests/test_challenge_diagnostic_sink.py",
-      "bytes": 8847,
-      "sha256": "a485d9c9717a0fdbc8085ecae673d0b58d567117a309a8b472ca6394c88848d9"
+      "bytes": 9067,
+      "sha256": "cc14de939f6a13356ab3587fc5f0d140a7dc2811a6b309823bdbd84988f1535f"
     },
     {
       "path": "tests/test_daily_memory_early_acceptance.py",
@@ -1100,28 +1105,33 @@
     },
     {
       "path": "tests/test_grouped_extractor_diagnostic_reasons.py",
-      "bytes": 4678,
-      "sha256": "045e433a0e983914f97bd1e0a4def26353f5845ea039c564b5dd50c957a61796"
+      "bytes": 4794,
+      "sha256": "eb349e617be4931b806bf1f93e50842f717838d13e808a2d5c9b84c80b227093"
     },
     {
       "path": "tests/test_grouped_extractor_repair.py",
-      "bytes": 11523,
-      "sha256": "2816de58acc7b934b2d522f98c561b38f5853befbd7a72709ed4c7e6c98b9ed9"
+      "bytes": 11799,
+      "sha256": "80753ab4f7ee7a88cf800ffa447fed2497c2c71399339143b10af117aec99fab"
+    },
+    {
+      "path": "tests/test_grouped_partial_dates.py",
+      "bytes": 6241,
+      "sha256": "3f027884c5526e66fd875418a351c8dcd9c2f4cf1d272d56085cce4172994ad5"
     },
     {
       "path": "tests/test_memory_503_failure_isolation.py",
-      "bytes": 17860,
-      "sha256": "c0c3e41f4f4d40c44ac8ac0c700e91bb077cf55ebb65a88e20f222a1ebf2e620"
+      "bytes": 18339,
+      "sha256": "4ffbe499c2213f7c254906dda7d02ed658691cca1b4186f6a6e09c388be19903"
     },
     {
       "path": "tests/test_memory_challenge_cli_diagnostics.py",
-      "bytes": 5362,
-      "sha256": "651e6604717457d9d1dbb1368dbd4008d567961b27b555548f2bcc1285257750"
+      "bytes": 5503,
+      "sha256": "364388bffe96ade0aa8c7291e12c4174ab9b921e2d6d74b8c2816f858a9791b5"
     },
     {
       "path": "tests/test_memory_challenge_clone.py",
-      "bytes": 14586,
-      "sha256": "0c1c5edd1e1442bb653dd20fd4606caf60aca36a8a961622f865a9ef5d835341"
+      "bytes": 14897,
+      "sha256": "caaff1d1fb03d20259b01d76f7e5b1890b8ff8f1e873396ad5c375a687bc7d45"
     },
     {
       "path": "tests/test_memory_challenge_diagnostics.py",
@@ -1134,14 +1144,14 @@
       "sha256": "90ef2cf95eecb2af0935e0aaab405726e447c5355c8360b2d001ce47432cb6d4"
     },
     {
-      "path": "tests/test_memory_challenge_recovery_r2.py",
-      "bytes": 19467,
-      "sha256": "6993e473461a381c13d9497769dd5173338ba733aecfd79767bf000a6ab4ff29"
+      "path": "tests/test_memory_challenge_recovery.py",
+      "bytes": 28540,
+      "sha256": "61f588e225642b94e0baff3669255589e50772b4966b2adc3a2f935eb68d2505"
     },
     {
-      "path": "tests/test_memory_challenge_recovery.py",
-      "bytes": 27960,
-      "sha256": "d0919729470b8999a0f4bc36af76e7f81e7b5a5b9a2e6a7ef8c2418d6bda23ff"
+      "path": "tests/test_memory_challenge_recovery_r2.py",
+      "bytes": 19835,
+      "sha256": "6fee1c5d591da2a1b682465170bd7db8984f73029904b02c154fe45b4b267e6b"
     },
     {
       "path": "tests/test_memory_challenge_runtime.py",
@@ -1150,8 +1160,8 @@
     },
     {
       "path": "tests/test_memory_daily_isolation.py",
-      "bytes": 2368,
-      "sha256": "96a9bb58b5bfe910527f761347017b7e0ff7a831effa3e6f43f0ead26d5c4409"
+      "bytes": 2431,
+      "sha256": "c2a5464e56ca41f19a339b15c790779bfc1f58c0be8bbb568cf80bce12b04683"
     },
     {
       "path": "tests/test_memory_daily_online.py",
@@ -1160,13 +1170,13 @@
     },
     {
       "path": "tests/test_memory_grouped_provider.py",
-      "bytes": 7711,
-      "sha256": "106ab0e9a4e4d2ce1f64eaa9acb5735de241118c4868dadacfe8e5fd9b58e68f"
+      "bytes": 7881,
+      "sha256": "d1522edf9a32c1e07a234b408e0842f933e337d76cad16321a5e4e8a9fd86900"
     },
     {
       "path": "tests/test_memory_terminal_publication.py",
-      "bytes": 8011,
-      "sha256": "e88a2ded9645c5b6cb62b38e4ca9c12241555805ce12abbed398c8738b6f0108"
+      "bytes": 8181,
+      "sha256": "409a9b0a737f5296b9cf978d2fe7d17827dbd4fc56c74f7783bdb87b5350abf2"
     },
     {
       "path": "tests/test_raw_message_service.py",
@@ -1185,38 +1195,38 @@
     },
     {
       "path": "Tools/prepare_memory_challenge_recovery_clone.py",
-      "bytes": 1032,
-      "sha256": "85f8908dcb35bd1892677ce00592ad1a38be5d8c8b4edf0ab59f37a2696215e2"
+      "bytes": 1064,
+      "sha256": "ed07fe2dd131c7b6d34dfc92bbc06f2bf27bb03e5b5c074a85ff4061e0fd542d"
     },
     {
       "path": "Tools/probe_daily_memory_real.py",
-      "bytes": 54021,
-      "sha256": "b91fa35d74dbf5e11dbad2729a490b3343026aa887937ebf467966e146176ca6"
+      "bytes": 55055,
+      "sha256": "dd5a26235228ea0e99cf8dd7ed571f266dcff80bb8193e377baea7291fc2d453"
     },
     {
       "path": "Tools/probe_daily_memory_recall_diag.py",
-      "bytes": 116069,
-      "sha256": "cdb6568a701f8c2dc93e72661a7e08e19f33df942d76c6aacc41148de7edad01"
+      "bytes": 118658,
+      "sha256": "b1004fab38336fd6360415997f0f6e683b218f807894c936994af67e89a9fbc7"
     },
     {
       "path": "Tools/recover_memory_challenge_failed.py",
-      "bytes": 16498,
-      "sha256": "a50f2e20c96cd9744948496bba353bf3ee488193d7f5db8da83f9e676642d87e"
+      "bytes": 16841,
+      "sha256": "0eaeb7fd3c89d922b6f14f69a13d80ed854c6e87e74a72e9539d62c6c1001aa4"
     },
     {
       "path": "Tools/recover_memory_challenge_remaining.py",
-      "bytes": 4740,
-      "sha256": "b22830bbb42dcab0745c8f2e6e0a8912dfc69cea79fd1244805240b6c80faa76"
+      "bytes": 4846,
+      "sha256": "3f406b74d15c7868d4c38d18d80a7a743770b238207ef82b64ee3f056c03c009"
     },
     {
       "path": "Tools/serve_memory_challenge.py",
       "bytes": 14829,
-      "sha256": "4fcd041371642d24d56d2517ae4146ab205082769eb3e5976694d9907a80e2e4"
+      "sha256": "84597cc2ab26ef1fedd453ee13bb24d2241c5526f01ad5f94f599d524491fa5e"
     },
     {
       "path": "Tools/validate_memory_challenge_batch_job.py",
-      "bytes": 14701,
-      "sha256": "d15551fafc5ee146d61d54b327479de97ca39dba8c48322848dd8f4da11f604e"
+      "bytes": 15023,
+      "sha256": "1c95bf744e7bf305ab5b06994abc88e4b6c25f58a18717b63df7d421e913e0d8"
     },
     {
       "path": "VALIDATION-1.6.md",
@@ -1232,6 +1242,11 @@
       "path": "VALIDATION-1.8.2.md",
       "bytes": 4220,
       "sha256": "3a27de8dccba8d31bc6eeb52c32e3ca8bd56728a454e343aaeade5dc176d17cf"
+    },
+    {
+      "path": "VALIDATION-1.8.4.md",
+      "bytes": 4734,
+      "sha256": "11a71478135401e145499186dba8441507c5c5bb9f6ea0167f3fc84dc56c7b55"
     },
     {
       "path": "validation-deployment18.json",

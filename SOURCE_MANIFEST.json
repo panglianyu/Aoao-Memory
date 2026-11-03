@@ -1,44 +1,44 @@
 {
   "project": "aru memory",
-  "entry_version": "AMC-ENTRY-1.8.2",
+  "entry_version": "AMC-ENTRY-1.8.4",
   "role": "candidate-source-audit-set",
   "source_count": 202,
-  "source_bytes": 3061580,
+  "source_bytes": 3070519,
   "source_files": [
     {
-      "bytes": 1032,
+      "bytes": 1064,
       "path": "Tools/prepare_memory_challenge_recovery_clone.py",
-      "sha256": "85f8908dcb35bd1892677ce00592ad1a38be5d8c8b4edf0ab59f37a2696215e2"
+      "sha256": "ed07fe2dd131c7b6d34dfc92bbc06f2bf27bb03e5b5c074a85ff4061e0fd542d"
     },
     {
-      "bytes": 54021,
+      "bytes": 55055,
       "path": "Tools/probe_daily_memory_real.py",
-      "sha256": "b91fa35d74dbf5e11dbad2729a490b3343026aa887937ebf467966e146176ca6"
+      "sha256": "dd5a26235228ea0e99cf8dd7ed571f266dcff80bb8193e377baea7291fc2d453"
     },
     {
-      "bytes": 116069,
+      "bytes": 118658,
       "path": "Tools/probe_daily_memory_recall_diag.py",
-      "sha256": "cdb6568a701f8c2dc93e72661a7e08e19f33df942d76c6aacc41148de7edad01"
+      "sha256": "b1004fab38336fd6360415997f0f6e683b218f807894c936994af67e89a9fbc7"
     },
     {
-      "bytes": 16498,
+      "bytes": 16841,
       "path": "Tools/recover_memory_challenge_failed.py",
-      "sha256": "a50f2e20c96cd9744948496bba353bf3ee488193d7f5db8da83f9e676642d87e"
+      "sha256": "0eaeb7fd3c89d922b6f14f69a13d80ed854c6e87e74a72e9539d62c6c1001aa4"
     },
     {
-      "bytes": 4740,
+      "bytes": 4846,
       "path": "Tools/recover_memory_challenge_remaining.py",
-      "sha256": "b22830bbb42dcab0745c8f2e6e0a8912dfc69cea79fd1244805240b6c80faa76"
+      "sha256": "3f406b74d15c7868d4c38d18d80a7a743770b238207ef82b64ee3f056c03c009"
     },
     {
       "bytes": 14829,
       "path": "Tools/serve_memory_challenge.py",
-      "sha256": "4fcd041371642d24d56d2517ae4146ab205082769eb3e5976694d9907a80e2e4"
+      "sha256": "84597cc2ab26ef1fedd453ee13bb24d2241c5526f01ad5f94f599d524491fa5e"
     },
     {
-      "bytes": 14701,
+      "bytes": 15023,
       "path": "Tools/validate_memory_challenge_batch_job.py",
-      "sha256": "d15551fafc5ee146d61d54b327479de97ca39dba8c48322848dd8f4da11f604e"
+      "sha256": "1c95bf744e7bf305ab5b06994abc88e4b6c25f58a18717b63df7d421e913e0d8"
     },
     {
       "bytes": 21755,
@@ -48,17 +48,17 @@
     {
       "bytes": 11209,
       "path": "apps/system_memory_god/challenge_api.py",
-      "sha256": "8f00e8404050632b3efd3a8bb86e8a0d1953f82e24fa70626da410068d57583c"
+      "sha256": "d92c8cdc1248a919e0a6574d99b0ef2f69cef4175638b4bc34729bd608aa8778"
     },
     {
-      "bytes": 18004,
+      "bytes": 18389,
       "path": "apps/system_memory_god/challenge_job_store.py",
-      "sha256": "14a73f86c1e85ee5775c094cfbaa9059e99715d851e853de5f806802557675a8"
+      "sha256": "932aefc314e09bc79de1c3a60188e54ad7ecaa65cc46bc2ee035dfce2e350359"
     },
     {
-      "bytes": 15677,
+      "bytes": 16017,
       "path": "apps/system_memory_god/challenge_jobs.py",
-      "sha256": "217c91902248a94261bca961b6d883623b3995a6e38de5f85cb3db3ce9f30ef3"
+      "sha256": "a3c8ef05fb28e55fd5453a87a25ab5fec3ea8baae56c1873671465b5f11ecf2d"
     },
     {
       "bytes": 4946,
@@ -116,9 +116,9 @@
       "sha256": "936268512e80ff89c9010f71c684c45477b99e3630a50d31788c7ec267490721"
     },
     {
-      "bytes": 11100,
+      "bytes": 13227,
       "path": "apps/system_memory_god/grouped_extractor.py",
-      "sha256": "4838ffd9527d1789aac71b854e4550dd8ac00e0928a15e27b0258774a9fd5df6"
+      "sha256": "b03af8b964ca346a9fad31d894fedf3bff7fea8120d2d9ee40c11e58476a75aa"
     },
     {
       "bytes": 36512,
@@ -351,9 +351,9 @@
       "sha256": "3647635d0309fbddae7c118192c5d7354180225d4f6d02783350a3d3d19dde3c"
     },
     {
-      "bytes": 17988,
+      "bytes": 18372,
       "path": "kernel/challenge_diagnostics.py",
-      "sha256": "365ff5bb57e3083e0946e7a14b50330d6d0c16458935c603dfba012305142b3b"
+      "sha256": "ab4c03f1aed6cd2b163aaba353d2315a685817d2eea8c510da673c62989e149f"
     },
     {
       "bytes": 18391,
@@ -546,9 +546,9 @@
       "sha256": "72aa9701b7f5f67c4f56c089130aff1072dd2d715bce1809bb18454d34c83b7f"
     },
     {
-      "bytes": 27741,
+      "bytes": 28245,
       "path": "kernel/raw_message_clone.py",
-      "sha256": "656de01d012e84906283986bbde4fec02a7e6836ed6a3b36797e6d1a591bb827"
+      "sha256": "20488218c93d896006d1278b400dc15f3d6acac7f48ce1fdd70512d72a716a46"
     },
     {
       "bytes": 13911,
@@ -576,14 +576,14 @@
       "sha256": "1c4bf38dde3bb1d009b63aca4326d3e9580a1e463bc8f10c610702f45d5e71f9"
     },
     {
-      "bytes": 21168,
+      "bytes": 21588,
       "path": "kernel/raw_message_recovery.py",
-      "sha256": "dc7669e029399fee3e89638f47ecc25c730afea5fe80697aa09e129f05e2b66b"
+      "sha256": "fd657756eb33ad77743db96231d16220c1d622a8a38bbc954b2065c38d5b11a0"
     },
     {
-      "bytes": 20704,
+      "bytes": 21057,
       "path": "kernel/raw_message_recovery_r2.py",
-      "sha256": "5416028a5eef351381e9f11ab7b4a78d45c3487c3a7dcb3e89dd8dcfb8a5a7b0"
+      "sha256": "a71f20364a93d4ffdd15df271f49e7f11f8a6ce3afb60b503aa5afea16eeec0b"
     },
     {
       "bytes": 5525,
