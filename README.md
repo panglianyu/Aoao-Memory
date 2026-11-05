@@ -1,8 +1,12 @@
 # aru memory
 
-A Windows Add/Search memory service. AMC-ENTRY-1.8.4 retains original messages and derives vector, entity, graph, rule, journal and schedule evidence with separate user storage. Its 202 runtime Python files match the frozen isolated candidate byte-for-byte. Private configuration, credentials, runtime data, models, operational controls and host-assistant history are excluded.
+A Windows Add/Search memory service. SNAP-CAP-1 is an undeployed capacity repair candidate based on fixed AMC-ENTRY-1.8.4. It retains original messages and scoped vector, entity, graph, rule, journal and schedule evidence. Two of the 202 pinned Python audit files have capacity changes; two additional files only update candidate version constants. Private configuration, credentials, runtime data, models, operational controls and host-assistant history are excluded.
 
 ## Candidate status
+
+SNAP-CAP-1 removes the fixed 5000-row snapshot threshold and checks actual vector and canonical ID bytes before capture, allocation and file reads. It keeps the 40 MiB whole-generation vector body, 2 MiB ID directory, 768 MiB cache, snapshot schemas, retrieval and deadlines. This is a capacity correctness patch, not a throughput claim or approval to replace an accepted evaluation deployment. See [PATCH-SNAP-CAP-1.md](PATCH-SNAP-CAP-1.md).
+
+The following 1.8.4 notes describe the inherited base and its historical validation.
 
 The 1.8.4 policy preserves eligible nonempty time strings as literal text when they cannot represent an absolute instant. The complete original string is appended to valid record text and the timestamp becomes null, within the existing text limit. This includes partial dates, natural language, naive timestamps and invalid calendar strings; they are retained as literals, not certified as valid dates. It deliberately expands accepted input representations. See [PATCH184.md](PATCH184.md) and [VALIDATION-1.8.4.md](VALIDATION-1.8.4.md).
 
@@ -35,7 +39,7 @@ The documented request deadline is 1700 seconds, including body reading and queu
 Use 64-bit Windows, the Python launcher and Python 3.10. The reference interpreter was 3.10.11. Use a short checkout path.
 
 ~~~powershell
-git clone --branch codex/amc-entry-1.8.4 https://github.com/panglianyu/Aoao-Memory.git
+git clone --branch codex/snap-cap-1 https://github.com/panglianyu/Aoao-Memory.git
 cd Aoao-Memory
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup.ps1 -Dev
 ~~~

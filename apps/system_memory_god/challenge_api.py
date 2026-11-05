@@ -17,7 +17,7 @@ from kernel.raw_message_models import ConflictError
 from .challenge_admission import AdmissionClosed, AdmissionFull, BoundedAdmission
 
 
-ENTRY_VERSION = "AMC-ENTRY-1.8.4"
+ENTRY_VERSION = "SNAP-CAP-1"
 MAX_BODY_BYTES = 2 * 1024 * 1024
 MAX_MESSAGE_CHARS = 81920
 MAX_MESSAGES = 256

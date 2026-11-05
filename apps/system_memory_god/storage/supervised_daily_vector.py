@@ -17,7 +17,7 @@ import threading
 import struct
 import time
 
-from kernel.memory_pipeline_models import PipelineScope, identity
+from kernel.memory_pipeline_models import PipelineScope, canonical, identity
 from kernel.daily_memory_contracts import SNAPSHOT_QUERY_TIMEOUT, INTERACTIVE_RECALL_TIMEOUT, RecallPurpose
 from .daily_vector_worker import MAX_FRAME_BYTES, _embedding_deadline, _validate_shared_embedding, serve
 from .scoped_stores import ScopedStores
@@ -146,6 +146,7 @@ class SupervisedDailyVector:
         self._startup = {"stage": "not_started", "error_code": "none",
                          "error_type": "none", "elapsed_ms": 0.0}
         self._snapshot_rows: dict[PipelineScope, dict[str, dict]] = {}
+        self._snapshot_sizes: dict[PipelineScope, tuple[int, int]] = {}
         self._snapshot_failed: set[PipelineScope] = set()
         self._pending_guard = threading.Lock()
         self._pending = 0
@@ -1246,8 +1247,11 @@ class SupervisedDailyVector:
         return tuple(rows)
 
     def _capture_snapshot(self, scope: PipelineScope, rows: list[dict]) -> None:
+        from .daily_vector_snapshot import SnapshotCapacityError, snapshot_capacity
+
         with self._pending_guard:
             captured = self._snapshot_rows.setdefault(scope, {})
+            body_size, directory_size = self._snapshot_sizes.get(scope, (0, 2))
             for row in rows:
                 snapshot = row["snapshot"]
                 if (type(snapshot) is dict and snapshot == {
@@ -1258,6 +1262,7 @@ class SupervisedDailyVector:
                 if (type(snapshot) is not dict or set(snapshot) != {"schema", "f32", "sha256"}
                         or type(snapshot["schema"]) is not int or snapshot["schema"] != 1
                         or type(snapshot["f32"]) is not str or len(snapshot["f32"]) > 10924
+                        or type(row["embedding_dim"]) is not int
                         or not 1 <= row["embedding_dim"] <= 2048):
                     raise RuntimeError("invalid numerical receipt")
                 body = base64.b64decode(snapshot["f32"], validate=True)
@@ -1266,10 +1271,22 @@ class SupervisedDailyVector:
                         or not all(math.isfinite(value) for value in struct.unpack(
                             "<" + "f" * row["embedding_dim"], body))):
                     raise RuntimeError("invalid numerical receipt")
-                if row["memory_id"] not in captured and len(captured) >= 5000:
+                key = row["memory_id"]
+                identity(key)
+                previous = captured.get(key)
+                next_body_size = body_size + len(body) - (
+                    previous["embedding_dim"] * 4 if previous is not None else 0)
+                next_directory_size = directory_size + (
+                    len(canonical(key).encode("ascii")) + (1 if captured else 0)
+                    if previous is None else 0)
+                try:
+                    snapshot_capacity(next_body_size, next_directory_size)
+                except SnapshotCapacityError:
                     self._snapshot_failed.add(scope)
                     continue
-                captured[row["memory_id"]] = row
+                captured[key] = {**row, "snapshot": dict(snapshot)}
+                body_size, directory_size = next_body_size, next_directory_size
+                self._snapshot_sizes[scope] = (body_size, directory_size)
 
     def snapshot_vectors(self, scope: PipelineScope) -> dict[str, dict]:
         """Already captured numbers only; never enter the writer's IPC queue."""

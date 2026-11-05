@@ -1,7 +1,7 @@
 {
   "project": "aru memory",
-  "entry_version": "AMC-ENTRY-1.8.4",
-  "file_count": 253,
+  "entry_version": "SNAP-CAP-1",
+  "file_count": 257,
   "files": [
     {
       "path": ".gitattributes",
@@ -29,14 +29,139 @@
       "sha256": "8a2034fac6425d582dffdef5711207c0ddf2d9b8a1af536d82d24c23fc239ca7"
     },
     {
+      "path": "CANDIDATE_VERSION",
+      "bytes": 12,
+      "sha256": "7d542d24b91bf6043787d487ce3f629efd177a2e7385a8f8e1e3a29bc5db6f14"
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "bytes": 1744,
+      "sha256": "9cd7551b0c7a9845f9854e1aac3d880b23ea439193d183d1cb3df1b5ab29258d"
+    },
+    {
+      "path": "DEPENDENCIES.md",
+      "bytes": 1734,
+      "sha256": "992003fd7b2e07bdd03c2d3fc398411fbde59b70efbc27f0fc56f1ea797f957f"
+    },
+    {
+      "path": "JOB17.md",
+      "bytes": 5636,
+      "sha256": "fdc0c5a1908f895d336283f8b6f4bfaaa59d47a51dcec8a0912fbbaef2be793a"
+    },
+    {
+      "path": "LICENSE",
+      "bytes": 1088,
+      "sha256": "6f9fbdc35a0b919200a22d63b2f195bd3dfcd10d009dee4fcf75aa2bbb554fed"
+    },
+    {
+      "path": "PATCH-SNAP-CAP-1.md",
+      "bytes": 3477,
+      "sha256": "1c12098f1be3998b4f31aa084af9516e0b4ffe70c67ba2c7ec059820ba74bb6d"
+    },
+    {
+      "path": "PATCH18.md",
+      "bytes": 5198,
+      "sha256": "00fbfc210646ba3f53827fe59762e1dd59404ca9e09b607c72cef7b7d3f75bf4"
+    },
+    {
+      "path": "PATCH182.md",
+      "bytes": 3412,
+      "sha256": "a468f6f78d4cc0edda9bf296d676e6a5f233eeb46ba9a568f4fc61dbe9dc369e"
+    },
+    {
+      "path": "PATCH184.md",
+      "bytes": 5338,
+      "sha256": "97fb6d7d3494e3a4e078c105da789d186982f9a586724430c8e06121ac6ec374"
+    },
+    {
+      "path": "PREPARATION.md",
+      "bytes": 2230,
+      "sha256": "ab621f70c45ebe5235a7a29fad16477d0ebaf93d94b42f5e81f0d0e1c5b87817"
+    },
+    {
+      "path": "README.md",
+      "bytes": 13255,
+      "sha256": "34b6be883145373e02a132eb1c9fbb20acca31787c7abac62a3769de2f0ac944"
+    },
+    {
+      "path": "SOURCE_MANIFEST.json",
+      "bytes": 35190,
+      "sha256": "95af09101c65a9011cc75e76d00fbde0680b87527494b8d2e5d92328bf06cf35"
+    },
+    {
+      "path": "THIRD_PARTY_NOTICES.md",
+      "bytes": 2680,
+      "sha256": "2e1491cd8109284a23d01a8d66d1701ef6667b6a87569eaaa38c905f002cac8f"
+    },
+    {
+      "path": "Tools/prepare_memory_challenge_recovery_clone.py",
+      "bytes": 1064,
+      "sha256": "ed07fe2dd131c7b6d34dfc92bbc06f2bf27bb03e5b5c074a85ff4061e0fd542d"
+    },
+    {
+      "path": "Tools/probe_daily_memory_real.py",
+      "bytes": 55055,
+      "sha256": "dd5a26235228ea0e99cf8dd7ed571f266dcff80bb8193e377baea7291fc2d453"
+    },
+    {
+      "path": "Tools/probe_daily_memory_recall_diag.py",
+      "bytes": 118658,
+      "sha256": "b1004fab38336fd6360415997f0f6e683b218f807894c936994af67e89a9fbc7"
+    },
+    {
+      "path": "Tools/recover_memory_challenge_failed.py",
+      "bytes": 16841,
+      "sha256": "0eaeb7fd3c89d922b6f14f69a13d80ed854c6e87e74a72e9539d62c6c1001aa4"
+    },
+    {
+      "path": "Tools/recover_memory_challenge_remaining.py",
+      "bytes": 4846,
+      "sha256": "3f406b74d15c7868d4c38d18d80a7a743770b238207ef82b64ee3f056c03c009"
+    },
+    {
+      "path": "Tools/serve_memory_challenge.py",
+      "bytes": 14824,
+      "sha256": "1b7a8c248227aef2da4a3e703467ca05e002e77a17020045a87bca2093afd717"
+    },
+    {
+      "path": "Tools/validate_memory_challenge_batch_job.py",
+      "bytes": 15023,
+      "sha256": "1c95bf744e7bf305ab5b06994abc88e4b6c25f58a18717b63df7d421e913e0d8"
+    },
+    {
+      "path": "VALIDATION-1.6.md",
+      "bytes": 8795,
+      "sha256": "5ac2a023c8494fffc5be2b9cdf79bfc8e71e141e9ea0d428b3f32d433c25c798"
+    },
+    {
+      "path": "VALIDATION-1.8.1.md",
+      "bytes": 4578,
+      "sha256": "7e035d24dcce9ebda806659961f8e0d0bf8092833706976e21a661609e714688"
+    },
+    {
+      "path": "VALIDATION-1.8.2.md",
+      "bytes": 4220,
+      "sha256": "3a27de8dccba8d31bc6eeb52c32e3ca8bd56728a454e343aaeade5dc176d17cf"
+    },
+    {
+      "path": "VALIDATION-1.8.4.md",
+      "bytes": 4734,
+      "sha256": "11a71478135401e145499186dba8441507c5c5bb9f6ea0167f3fc84dc56c7b55"
+    },
+    {
+      "path": "VALIDATION.md",
+      "bytes": 4578,
+      "sha256": "7e035d24dcce9ebda806659961f8e0d0bf8092833706976e21a661609e714688"
+    },
+    {
       "path": "apps/system_memory_god/challenge_admission.py",
       "bytes": 21755,
       "sha256": "16acd61d89e7b2de41dd45b78cd31e648bf2da511847ea66be04d33e853d82fa"
     },
     {
       "path": "apps/system_memory_god/challenge_api.py",
-      "bytes": 11209,
-      "sha256": "d92c8cdc1248a919e0a6574d99b0ef2f69cef4175638b4bc34729bd608aa8778"
+      "bytes": 11204,
+      "sha256": "95fb208c1058945cfa1fc7acfdeef7330f8af965fc9d60c1ac41f19646140ed8"
     },
     {
       "path": "apps/system_memory_god/challenge_job_store.py",
@@ -170,8 +295,8 @@
     },
     {
       "path": "apps/system_memory_god/storage/daily_vector_snapshot.py",
-      "bytes": 17970,
-      "sha256": "801a867fb10653fb03780da37d4df0bae37ce7563f08ca70fc18c6ce79249387"
+      "bytes": 19031,
+      "sha256": "07f1237abc0c9b390bb0f2b10ac78d1ee6e4cde8a2f7614e45c6cb6f336850ec"
     },
     {
       "path": "apps/system_memory_god/storage/daily_vector_snapshot_worker.py",
@@ -265,8 +390,8 @@
     },
     {
       "path": "apps/system_memory_god/storage/supervised_daily_vector.py",
-      "bytes": 83549,
-      "sha256": "c18a0a756e8f2dc0834384f67846502ea9304eedc080538fce8f2ef7ab8dcc20"
+      "bytes": 84556,
+      "sha256": "a628821c03e9a5f2687cb19603590b646eb08eea922b19a77c7707666e2f59c9"
     },
     {
       "path": "apps/system_memory_god/storage/supervised_daily_vector_snapshot.py",
@@ -294,29 +419,9 @@
       "sha256": "c033b6e05dcedb8b93d4854997ff0f669a562fabe1bc191a4b349b42d982c26f"
     },
     {
-      "path": "CANDIDATE_VERSION",
-      "bytes": 17,
-      "sha256": "c317940e9f74d0fd74957429868fd770b4dadf5908b130baacbef0e7ef65f26f"
-    },
-    {
       "path": "config/provider.example.json",
       "bytes": 169,
       "sha256": "1271bf1786460de51ea79bd26c2a848e1c256ffc1f406d801329db9b4c2b1660"
-    },
-    {
-      "path": "CONTRIBUTING.md",
-      "bytes": 1744,
-      "sha256": "9cd7551b0c7a9845f9854e1aac3d880b23ea439193d183d1cb3df1b5ab29258d"
-    },
-    {
-      "path": "DEPENDENCIES.md",
-      "bytes": 1734,
-      "sha256": "992003fd7b2e07bdd03c2d3fc398411fbde59b70efbc27f0fc56f1ea797f957f"
-    },
-    {
-      "path": "JOB17.md",
-      "bytes": 5636,
-      "sha256": "fdc0c5a1908f895d336283f8b6f4bfaaa59d47a51dcec8a0912fbbaef2be793a"
     },
     {
       "path": "kernel/agent_runtime.py",
@@ -949,31 +1054,6 @@
       "sha256": "f5142d561503da47765e7bed18acd033abf38e9c2159d1dece14986b26bb4ce9"
     },
     {
-      "path": "LICENSE",
-      "bytes": 1088,
-      "sha256": "6f9fbdc35a0b919200a22d63b2f195bd3dfcd10d009dee4fcf75aa2bbb554fed"
-    },
-    {
-      "path": "PATCH18.md",
-      "bytes": 5198,
-      "sha256": "00fbfc210646ba3f53827fe59762e1dd59404ca9e09b607c72cef7b7d3f75bf4"
-    },
-    {
-      "path": "PATCH182.md",
-      "bytes": 3412,
-      "sha256": "a468f6f78d4cc0edda9bf296d676e6a5f233eeb46ba9a568f4fc61dbe9dc369e"
-    },
-    {
-      "path": "PATCH184.md",
-      "bytes": 5338,
-      "sha256": "97fb6d7d3494e3a4e078c105da789d186982f9a586724430c8e06121ac6ec374"
-    },
-    {
-      "path": "PREPARATION.md",
-      "bytes": 2230,
-      "sha256": "ab621f70c45ebe5235a7a29fad16477d0ebaf93d94b42f5e81f0d0e1c5b87817"
-    },
-    {
       "path": "protocols/docker_host.py",
       "bytes": 543,
       "sha256": "c1d7b60d7df3e8de4c748700283f09f8ae6a29aef74e84efcabf93cf1ed875fb"
@@ -1054,11 +1134,6 @@
       "sha256": "0c216df983d4dd2a97d6d665039c9b43409e6f913edd7fc9a55e56f6ac368d9e"
     },
     {
-      "path": "README.md",
-      "bytes": 12635,
-      "sha256": "912da2177047266f604423a8564f9c2e9b541d2e5ac725812d1f0697af431879"
-    },
-    {
       "path": "requirements-dev.txt",
       "bytes": 90,
       "sha256": "5e9890c352a4821a99b9b68271114e4b21dbac27b806d7097e5b9a9e54157dcc"
@@ -1072,11 +1147,6 @@
       "path": "scripts/setup.ps1",
       "bytes": 2269,
       "sha256": "8b43ddea7a67eaa102c8ebb0d8966b0aea807eb81e6c05f5ceab016b776e45f0"
-    },
-    {
-      "path": "SOURCE_MANIFEST.json",
-      "bytes": 35092,
-      "sha256": "5ab96e38fc8b4f280ea0955f3536e4e9b6096ea70b748b3f5f7ecf3089fe3139"
     },
     {
       "path": "tests/__init__.py",
@@ -1189,64 +1259,19 @@
       "sha256": "e83dafe4db72136725c8da770b6afd9a745a96b3086aaf656f0010d7a33e947c"
     },
     {
-      "path": "THIRD_PARTY_NOTICES.md",
-      "bytes": 2680,
-      "sha256": "2e1491cd8109284a23d01a8d66d1701ef6667b6a87569eaaa38c905f002cac8f"
+      "path": "tests/test_snapshot_byte_boundaries.py",
+      "bytes": 7476,
+      "sha256": "6634c828d67626014d8aae23f15603e8250879310497f24e0cd2362bc8a5731d"
     },
     {
-      "path": "Tools/prepare_memory_challenge_recovery_clone.py",
-      "bytes": 1064,
-      "sha256": "ed07fe2dd131c7b6d34dfc92bbc06f2bf27bb03e5b5c074a85ff4061e0fd542d"
+      "path": "tests/test_snapshot_candidate_version.py",
+      "bytes": 1049,
+      "sha256": "6a6c699eee019840b83c5265671142bb2d14bfdc1bb08157b1302c33ceb5d75b"
     },
     {
-      "path": "Tools/probe_daily_memory_real.py",
-      "bytes": 55055,
-      "sha256": "dd5a26235228ea0e99cf8dd7ed571f266dcff80bb8193e377baea7291fc2d453"
-    },
-    {
-      "path": "Tools/probe_daily_memory_recall_diag.py",
-      "bytes": 118658,
-      "sha256": "b1004fab38336fd6360415997f0f6e683b218f807894c936994af67e89a9fbc7"
-    },
-    {
-      "path": "Tools/recover_memory_challenge_failed.py",
-      "bytes": 16841,
-      "sha256": "0eaeb7fd3c89d922b6f14f69a13d80ed854c6e87e74a72e9539d62c6c1001aa4"
-    },
-    {
-      "path": "Tools/recover_memory_challenge_remaining.py",
-      "bytes": 4846,
-      "sha256": "3f406b74d15c7868d4c38d18d80a7a743770b238207ef82b64ee3f056c03c009"
-    },
-    {
-      "path": "Tools/serve_memory_challenge.py",
-      "bytes": 14829,
-      "sha256": "84597cc2ab26ef1fedd453ee13bb24d2241c5526f01ad5f94f599d524491fa5e"
-    },
-    {
-      "path": "Tools/validate_memory_challenge_batch_job.py",
-      "bytes": 15023,
-      "sha256": "1c95bf744e7bf305ab5b06994abc88e4b6c25f58a18717b63df7d421e913e0d8"
-    },
-    {
-      "path": "VALIDATION-1.6.md",
-      "bytes": 8795,
-      "sha256": "5ac2a023c8494fffc5be2b9cdf79bfc8e71e141e9ea0d428b3f32d433c25c798"
-    },
-    {
-      "path": "VALIDATION-1.8.1.md",
-      "bytes": 4578,
-      "sha256": "7e035d24dcce9ebda806659961f8e0d0bf8092833706976e21a661609e714688"
-    },
-    {
-      "path": "VALIDATION-1.8.2.md",
-      "bytes": 4220,
-      "sha256": "3a27de8dccba8d31bc6eeb52c32e3ca8bd56728a454e343aaeade5dc176d17cf"
-    },
-    {
-      "path": "VALIDATION-1.8.4.md",
-      "bytes": 4734,
-      "sha256": "11a71478135401e145499186dba8441507c5c5bb9f6ea0167f3fc84dc56c7b55"
+      "path": "tests/test_snapshot_capacity_regression.py",
+      "bytes": 2775,
+      "sha256": "e41621bc5314e531ba384edaef223e41f0b905f569e288cdc8708da43236c3b9"
     },
     {
       "path": "validation-deployment18.json",
@@ -1262,11 +1287,6 @@
       "path": "validation-patch18.json",
       "bytes": 908,
       "sha256": "741d26b12615c7bf0d273da0c6db2e82fd129b247b2e0a2f95a4e757ff35bbe0"
-    },
-    {
-      "path": "VALIDATION.md",
-      "bytes": 4578,
-      "sha256": "7e035d24dcce9ebda806659961f8e0d0bf8092833706976e21a661609e714688"
     }
   ]
 }

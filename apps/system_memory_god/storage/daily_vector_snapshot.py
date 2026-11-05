@@ -19,7 +19,6 @@ from kernel.memory_pipeline_models import PipelineScope, canonical, identity
 from .pipeline_database import reject_directory_link, resolved_pipeline_path
 from .daily_snapshot_file_ops import SnapshotFileOps
 
-MAX_ROWS = 5000
 MAX_DIMENSION = 2048
 MAX_BODY = 40 * 1024**2
 MAX_DIRECTORY = 2 * 1024**2
@@ -30,6 +29,17 @@ _FILES = {"vectors.f32", "ids.json", "manifest.json"}
 
 class SnapshotCapacityError(ValueError):
     """Do not silently truncate the searchable corpus when capacity is reached."""
+
+
+def snapshot_capacity(body_bytes: int, directory_bytes: int | None = None) -> None:
+    """Check whole-generation byte budgets before allocating its full bodies."""
+    if (type(body_bytes) is not int or body_bytes < 0
+            or directory_bytes is not None
+            and (type(directory_bytes) is not int or directory_bytes < 2)):
+        raise ValueError("invalid snapshot size")
+    if (body_bytes > MAX_BODY
+            or directory_bytes is not None and directory_bytes > MAX_DIRECTORY):
+        raise SnapshotCapacityError("vector_capacity_exceeded")
 
 
 def _cache_path(path: Path) -> Path:
@@ -153,11 +163,12 @@ def load_snapshot(root: Path, scope: PipelineScope, generation: str, *, embeddin
             or binding_sha256 is not None and manifest.get("binding_sha256") != binding_sha256
             or manifest["scope"] != scope.partition_id or manifest["embedding"] != embedding
             or _hash(canonical(manifest).encode()) != generation
-            or type(manifest["rows"]) is not int or not 0 <= manifest["rows"] <= MAX_ROWS
+            or type(manifest["rows"]) is not int or manifest["rows"] < 0
             or type(manifest["dimension"]) is not int or not 1 <= manifest["dimension"] <= MAX_DIMENSION
             or binding_sha256 is not None and manifest["rows"] > 0 and manifest["dimension"] != 1024):
         raise ValueError("invalid snapshot manifest")
     expected_size = manifest["rows"] * manifest["dimension"] * 4
+    snapshot_capacity(expected_size)
     body = _read(path / "vectors.f32", expected_size)
     ids_body = _read(path / "ids.json", MAX_DIRECTORY)
     if (len(body) != expected_size or len(body) > MAX_BODY
@@ -222,20 +233,30 @@ class DailyVectorSnapshot:
             if self._closed or scope not in self.scopes or type(vectors) is not dict:
                 raise ValueError("snapshot scope unavailable")
             self._resume_rollbacks()
-            if len(vectors) > MAX_ROWS:
-                raise SnapshotCapacityError("vector_capacity_exceeded")
-            ids = sorted(vectors)
-            for key in ids:
-                identity(key)
-            dimension = len(vectors[ids[0]]) // 4 if ids else 16
+            if vectors:
+                first = next(iter(vectors.values()))
+                if type(first) is not bytes:
+                    raise ValueError("invalid snapshot vector shape")
+                dimension = len(first) // 4
+            else:
+                dimension = 16
             if (not 1 <= dimension <= MAX_DIMENSION
-                    or self.binding_sha256 is not None and ids and dimension != 1024
-                    or any(type(vectors[key]) is not bytes or len(vectors[key]) != dimension * 4 for key in ids)):
+                    or self.binding_sha256 is not None and vectors and dimension != 1024):
                 raise ValueError("invalid snapshot vector shape")
+            expected_size = len(vectors) * dimension * 4
+            snapshot_capacity(expected_size)
+            directory_size = 2
+            for index, (key, vector) in enumerate(vectors.items()):
+                identity(key)
+                if type(vector) is not bytes or len(vector) != dimension * 4:
+                    raise ValueError("invalid snapshot vector shape")
+                directory_size += len(canonical(key).encode("ascii")) + (1 if index else 0)
+                snapshot_capacity(expected_size, directory_size)
+            ids = sorted(vectors)
             body = b"".join(vectors[key] for key in ids)
             ids_body = canonical(ids).encode()
-            if len(body) > MAX_BODY or len(ids_body) > MAX_DIRECTORY:
-                raise SnapshotCapacityError("vector_capacity_exceeded")
+            if len(body) != expected_size or len(ids_body) != directory_size:
+                raise ValueError("snapshot size changed")
             manifest = {"schema": 1, "scope": scope.partition_id, "embedding": self.embedding,
                         "rows": len(ids), "dimension": dimension,
                         "body_sha256": _hash(body), "ids_sha256": _hash(ids_body)}

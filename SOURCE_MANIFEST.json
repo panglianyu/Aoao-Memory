@@ -1,9 +1,9 @@
 {
   "project": "aru memory",
-  "entry_version": "AMC-ENTRY-1.8.4",
-  "role": "candidate-source-audit-set",
+  "entry_version": "SNAP-CAP-1",
+  "role": "Pinned Python audit set for undeployed SNAP-CAP-1 based on fixed AMC-ENTRY-1.8.4; broader than the minimal service import closure",
   "source_count": 202,
-  "source_bytes": 3070519,
+  "source_bytes": 3072577,
   "source_files": [
     {
       "bytes": 1064,
@@ -31,9 +31,9 @@
       "sha256": "3f406b74d15c7868d4c38d18d80a7a743770b238207ef82b64ee3f056c03c009"
     },
     {
-      "bytes": 14829,
+      "bytes": 14824,
       "path": "Tools/serve_memory_challenge.py",
-      "sha256": "84597cc2ab26ef1fedd453ee13bb24d2241c5526f01ad5f94f599d524491fa5e"
+      "sha256": "1b7a8c248227aef2da4a3e703467ca05e002e77a17020045a87bca2093afd717"
     },
     {
       "bytes": 15023,
@@ -46,9 +46,9 @@
       "sha256": "16acd61d89e7b2de41dd45b78cd31e648bf2da511847ea66be04d33e853d82fa"
     },
     {
-      "bytes": 11209,
+      "bytes": 11204,
       "path": "apps/system_memory_god/challenge_api.py",
-      "sha256": "d92c8cdc1248a919e0a6574d99b0ef2f69cef4175638b4bc34729bd608aa8778"
+      "sha256": "95fb208c1058945cfa1fc7acfdeef7330f8af965fc9d60c1ac41f19646140ed8"
     },
     {
       "bytes": 18389,
@@ -181,9 +181,9 @@
       "sha256": "fd992ca73ed397f588cd60f64d49fbcebb91bae5b2e5e0929fc03c16801a111d"
     },
     {
-      "bytes": 17970,
+      "bytes": 19031,
       "path": "apps/system_memory_god/storage/daily_vector_snapshot.py",
-      "sha256": "801a867fb10653fb03780da37d4df0bae37ce7563f08ca70fc18c6ce79249387"
+      "sha256": "07f1237abc0c9b390bb0f2b10ac78d1ee6e4cde8a2f7614e45c6cb6f336850ec"
     },
     {
       "bytes": 9049,
@@ -276,9 +276,9 @@
       "sha256": "f80fe49f453cee2b19ed0577d7913031991757da50cdd96a9b7953fa5dcde1ff"
     },
     {
-      "bytes": 83549,
+      "bytes": 84556,
       "path": "apps/system_memory_god/storage/supervised_daily_vector.py",
-      "sha256": "c18a0a756e8f2dc0834384f67846502ea9304eedc080538fce8f2ef7ab8dcc20"
+      "sha256": "a628821c03e9a5f2687cb19603590b646eb08eea922b19a77c7707666e2f59c9"
     },
     {
       "bytes": 11737,
