@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from contextlib import asynccontextmanager, contextmanager
+from dataclasses import dataclass, field
 import json
 import math
 import multiprocessing
@@ -17,6 +18,7 @@ from multiprocessing.process import BaseProcess
 import secrets
 import threading
 import time
+from typing import Protocol
 
 
 SCHEMA = "amc-shared-embedding-v1"
@@ -36,6 +38,32 @@ _RESPONSE_KEYS = frozenset({"schema", "op", "owner_nonce", "generation", "role",
  _QUERY_IO, _UPDATING) = range(15)
 _ROLE_ID = {"writer": _WRITER_ID, "query": _QUERY_ID}
 _ROLE_IO = {"writer": _WRITER_IO, "query": _QUERY_IO}
+
+
+class DeadlineHandoffNotCommitted(TimeoutError):
+    """The old consistent deadline remains owned; no control was attempted."""
+
+
+class DeadlineFence(Protocol):
+    @property
+    def deadline_ns(self) -> int: ...
+
+    def commit_deadline(self, deadline_ns: int) -> None: ...
+
+    def release(self, *, failed: bool = False) -> None: ...
+
+
+class DeadlineTransport(Protocol):
+    async def acquire_deadline_fence(self, deadline_ns: int) -> DeadlineFence: ...
+
+
+@dataclass
+class _DeadlineHandoff:
+    attempted: bool = False
+    updating: bool = False
+    failed: bool = False
+    withdrawn: bool = False
+    fences: list[DeadlineFence] = field(default_factory=list)
 
 
 @contextmanager
@@ -61,6 +89,11 @@ def _try_mark_failed(state, guard) -> None:
 
 def _positive_int(value) -> bool:
     return type(value) is int and 0 < value <= _INT64
+
+
+def _deadline_within_generation(deadline_ns: int, registered_ns: int) -> bool:
+    """Interactive work may shorten, never extend, the registered request budget."""
+    return _positive_int(deadline_ns) and _positive_int(registered_ns) and deadline_ns <= registered_ns
 
 
 def _check_deadline(deadline_ns: int) -> None:
@@ -216,7 +249,7 @@ class SharedEmbeddingClient:
                 _check_deadline(deadline_ns)
                 if (self._global[_FAILED] or self._state[_CLOSING] or self._state[_UPDATING]
                         or self._state[_GENERATION] != self._generation
-                        or self._state[_DEADLINE] != deadline_ns
+                        or not _deadline_within_generation(deadline_ns, self._state[_DEADLINE])
                         or self._state[_ROLE_IO[self._role]]):
                     raise RuntimeError("shared embedding capacity unavailable")
                 self._state[_ROLE_IO[self._role]] = 1
@@ -226,7 +259,7 @@ class SharedEmbeddingClient:
                     _check_deadline(deadline_ns)
                     if (self._global[_FAILED] or self._state[_CLOSING]
                             or self._state[_GENERATION] != self._generation
-                            or self._state[_DEADLINE] != deadline_ns):
+                            or not _deadline_within_generation(deadline_ns, self._state[_DEADLINE])):
                         raise RuntimeError("shared embedding generation unavailable")
                     if self._global[_INFLIGHT] < 2:
                         self._state[_ROLE_ID[self._role]] = request_id
@@ -392,7 +425,7 @@ def _serve_shared(control, state, slots, guard, nonce: str, startup_deadline: in
                             or request_id <= node["last_ids"][role]):
                         raise ValueError("invalid embedding request fields")
                     with _locked(guard):
-                        if (payload["deadline_ns"] != local[_DEADLINE]
+                        if (not _deadline_within_generation(payload["deadline_ns"], local[_DEADLINE])
                                 or local[_ROLE_ID[role]] != request_id
                                 or not local[_ROLE_IO[role]] or not 1 <= state[_INFLIGHT] <= 2):
                             raise ValueError("unreserved embedding request")
@@ -460,6 +493,8 @@ class SharedEmbeddingGeneration:
         self._prepare_task: asyncio.Task | None = None
         self._close_task: asyncio.Task | None = None
         self._prepare_command_started = self._settle_command_started = False
+        self._handoff_lock = asyncio.Lock()
+        self._handoff_tasks: dict[asyncio.Task, _DeadlineHandoff] = {}
 
     @staticmethod
     def _observe(completed: asyncio.Task) -> None:
@@ -484,24 +519,147 @@ class SharedEmbeddingGeneration:
         return True
 
     async def set_deadline(self, deadline_ns: int) -> None:
+        """Compatibility entry for a generation without supervised transports."""
+        await self.handoff_deadline(deadline_ns, ())
+
+    async def handoff_deadline(self, deadline_ns: int,
+                               transports: tuple[DeadlineTransport, ...]) -> None:
+        """Quiesce every participant before committing one consistent deadline."""
         _check_deadline(deadline_ns)
-        self._owner._ensure_available()
-        async with self._owner._parent_state(deadline_ns):
-            state = self._state
-            if (self._owner._state[_FAILED] or self._closing
-                    or state[_GENERATION] != self.number
-                    or state[_WRITER_IO] or state[_QUERY_IO]
-                    or state[_WRITER_ID] or state[_QUERY_ID] or state[_UPDATING]):
-                raise RuntimeError("embedding generation has unsettled I/O")
-            state[_UPDATING] = 1
+        if (type(transports) is not tuple or len(transports) > 2
+                or len({id(transport) for transport in transports}) != len(transports)):
+            raise ValueError("invalid deadline participants")
+        state = _DeadlineHandoff()
+        task = asyncio.create_task(self._handoff_owned(deadline_ns, transports, state))
+        self._handoff_tasks[task] = state
+        task.add_done_callback(lambda done: self._handoff_tasks.pop(done, None))
+        task.add_done_callback(self._observe)
+        cancelled = False
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                cancelled = True
+                # An uncommitted acquisition may withdraw. Once control might
+                # have been sent, its exact owner must finish or fail closed.
+                self._withdraw_handoff(task, state)
+            except Exception:
+                break
+        if cancelled:
+            # Consume an owned failure without replacing caller cancellation.
+            if not task.cancelled():
+                task.exception()
+            raise asyncio.CancelledError
+        task.result()
+
+    @staticmethod
+    def _withdraw_handoff(task: asyncio.Task, state: _DeadlineHandoff) -> None:
+        if not state.attempted and not state.withdrawn:
+            state.withdrawn = True
+            task.cancel()
+
+    async def _handoff_owned(self, deadline_ns: int,
+                            transports: tuple[DeadlineTransport, ...], state: _DeadlineHandoff) -> None:
+        acquired = False
         try:
-            await self._owner._command("deadline", self.number, deadline_ns, None,
-                                       deadline_ns=deadline_ns)
-            for client in self.clients.values():
-                client.bind_deadline(deadline_ns)
+            await asyncio.wait_for(self._handoff_lock.acquire(),
+                max(0, (deadline_ns - time.monotonic_ns()) / 1_000_000_000))
+            acquired = True
+            await self._prepare_handoff(deadline_ns, transports, state)
+            await self._commit_handoff(deadline_ns, state)
+        except BaseException as error:
+            state.failed = state.attempted or not isinstance(error, (TimeoutError, asyncio.TimeoutError, asyncio.CancelledError))
+            if state.attempted or self._owner._state[_FAILED] or self._owner._local_failed:
+                self._owner._mark_failed()
+            if not state.attempted and isinstance(error, (TimeoutError, asyncio.TimeoutError)):
+                raise DeadlineHandoffNotCommitted("deadline handoff did not commit") from error
+            raise
         finally:
-            async with self._owner._parent_state(deadline_ns):
-                state[_UPDATING] = 0
+            try:
+                await self._release_handoff(deadline_ns, state)
+            finally:
+                if acquired:
+                    self._handoff_lock.release()
+
+    async def _prepare_handoff(self, deadline_ns: int,
+                               transports: tuple[DeadlineTransport, ...], state: _DeadlineHandoff) -> None:
+        self._owner._ensure_available()
+        if self._closing or self._closed:
+            raise RuntimeError("embedding generation is closing")
+        for transport in transports:
+            _check_deadline(deadline_ns)
+            state.fences.append(await transport.acquire_deadline_fence(deadline_ns))
+        # Local actors are quiescent; shared completion accounting can briefly
+        # lag an already received reply. Do not reset the request's deadline.
+        while True:
+            _check_deadline(deadline_ns)
+            self._owner._ensure_available()
+            async with self._owner._parent_state(deadline_ns, poison_on_timeout=False):
+                local = self._state
+                if local[_GENERATION] != self.number:
+                    self._owner._mark_failed()
+                    raise RuntimeError("embedding generation identity changed")
+                if self._owner._state[_FAILED] or self._closing:
+                    raise RuntimeError("embedding generation unavailable")
+                busy = (local[_WRITER_IO] or local[_QUERY_IO] or local[_WRITER_ID]
+                        or local[_QUERY_ID] or local[_UPDATING])
+                if not busy:
+                    local[_UPDATING] = 1
+                    state.updating = True
+                    return
+            await asyncio.sleep(min(.001, max(0,
+                (deadline_ns - time.monotonic_ns()) / 1_000_000_000)))
+
+    async def _commit_handoff(self, deadline_ns: int, state: _DeadlineHandoff) -> None:
+        _check_deadline(deadline_ns)
+
+        def attempted() -> None:
+            state.attempted = True
+
+        await self._owner._command("deadline", self.number, deadline_ns, None,
+                                  deadline_ns=deadline_ns, on_attempt=attempted)
+        # The generation remains UPDATING across all local commit/readbacks.
+        for fence in state.fences:
+            fence.commit_deadline(deadline_ns)
+        for client in self.clients.values():
+            client.bind_deadline(deadline_ns)
+        if (any(fence.deadline_ns != deadline_ns for fence in state.fences)
+                or any(client._deadline_ns != deadline_ns for client in self.clients.values())):
+            raise RuntimeError("deadline commit readback mismatch")
+        async with self._owner._parent_state(deadline_ns):
+            if (self._state[_GENERATION] != self.number or self._state[_DEADLINE] != deadline_ns
+                    or self._owner._state[_FAILED]):
+                raise RuntimeError("deadline generation readback mismatch")
+            self._state[_UPDATING] = 0
+            state.updating = False
+        _check_deadline(deadline_ns)
+
+    async def _release_handoff(self, deadline_ns: int, state: _DeadlineHandoff) -> None:
+        failure = None
+        if state.updating and not state.failed:
+            try:
+                async with self._owner._parent_state(deadline_ns):
+                    self._state[_UPDATING] = 0
+            except BaseException as error:
+                failure = error
+                state.failed = True
+                self._owner._mark_failed()
+        for fence in reversed(state.fences):
+            try:
+                fence.release(failed=state.failed)
+            except BaseException as error:
+                failure = error
+                state.failed = True
+                self._owner._mark_failed()
+        if failure is not None:
+            raise RuntimeError("deadline handoff retirement unavailable") from failure
+
+    async def _settle_handoffs(self) -> None:
+        pending = tuple(self._handoff_tasks)
+        for task in pending:
+            self._withdraw_handoff(task, self._handoff_tasks[task])
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
     async def prepare_close(self, *, deadline_ns: int | None = None) -> None:
         if self._closed or self._finish_after_join():
@@ -522,6 +680,7 @@ class SharedEmbeddingGeneration:
         await asyncio.shield(self._prepare_task)
 
     async def _prepare_owned(self, deadline_ns: int) -> None:
+        await self._settle_handoffs()
         _check_deadline(deadline_ns)
         async with self._owner._parent_state(deadline_ns):
             if self._owner._state[_FAILED] or self._owner._local_failed:
@@ -644,10 +803,12 @@ class SharedEmbeddingOwner:
         _try_mark_failed(self._state, self._guard)
 
     @asynccontextmanager
-    async def _parent_state(self, deadline_ns: int | None = None):
+    async def _parent_state(self, deadline_ns: int | None = None, *, poison_on_timeout: bool = True):
         limit = deadline_ns if deadline_ns is not None else time.monotonic_ns() + 5_000_000_000
         while not self._guard.acquire(False):
             if time.monotonic_ns() >= limit:
+                if not poison_on_timeout:
+                    raise TimeoutError("shared embedding accounting lock admission expired")
                 self._mark_failed()
                 raise RuntimeError("shared embedding accounting lock unavailable")
             await asyncio.sleep(min(0.001, max(0.0, (limit - time.monotonic_ns()) / 1_000_000_000)))
@@ -671,18 +832,35 @@ class SharedEmbeddingOwner:
         if response != (SCHEMA, action, self._nonce, number, True, ""):
             raise RuntimeError("invalid embedding control response")
 
-    async def _command(self, action, number, deadline, resources, *, deadline_ns=None):
+    async def _command(self, action, number, deadline, resources, *, deadline_ns=None,
+                       on_attempt: Callable[[], None] | None = None):
         io_deadline = deadline_ns or time.monotonic_ns() + 30_000_000_000
+        acquired = False
+        try:
+            await asyncio.wait_for(self._control_lock.acquire(),
+                max(0, (io_deadline - time.monotonic_ns()) / 1_000_000_000))
+            acquired = True
+            _check_deadline(io_deadline)
+            if on_attempt is not None:
+                on_attempt()
+        except BaseException as error:
+            if acquired:
+                self._control_lock.release()
+            if on_attempt is not None and isinstance(error, (TimeoutError, asyncio.TimeoutError)):
+                raise DeadlineHandoffNotCommitted("deadline control did not enter transport") from error
+            if on_attempt is None or not isinstance(error, asyncio.CancelledError):
+                self._mark_failed()
+            raise
 
         async def owned_exchange():
-            async with self._control_lock:
-                try:
-                    _check_deadline(io_deadline)
-                    await asyncio.to_thread(self._exchange, action, number, deadline,
-                                            resources, io_deadline)
-                except BaseException:
-                    self._mark_failed()
-                    raise
+            try:
+                await asyncio.to_thread(self._exchange, action, number, deadline,
+                                        resources, io_deadline)
+            except BaseException:
+                self._mark_failed()
+                raise
+            finally:
+                self._control_lock.release()
 
         task = asyncio.create_task(owned_exchange())
         self._io_tasks.add(task)

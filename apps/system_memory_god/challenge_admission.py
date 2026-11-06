@@ -66,6 +66,8 @@ class BoundedAdmission:
         self._release_tasks: dict[asyncio.Task, _Ticket] = {}
         self._closing = False
         self._failure: BaseException | None = None
+        self._lane_failures: list[BaseException | None] = [None] * lane_count
+        self._quarantined_users: set[str] = set()
         self._empty = asyncio.Event()
         self._empty.set()
 
@@ -229,6 +231,23 @@ class BoundedAdmission:
             raise TypeError("admission failure must be an exception")
         self._fail_closed(error)
 
+    def quarantine_lane(self, lane_id: int, error: BaseException) -> None:
+        """Close one lane without releasing its unresolved ticket or cache pin."""
+        if type(lane_id) is not int or not 0 <= lane_id < self.lane_count or not isinstance(error, BaseException):
+            raise ValueError("invalid lane quarantine")
+        if self._lane_failures[lane_id] is None:
+            self._lane_failures[lane_id] = error
+        self._quarantined_users.update(key for key, pin in self._pins.items() if pin.lane_id == lane_id)
+        for ticket in tuple(self._queues[lane_id]):
+            self._publish(ticket, error=AdmissionClosed("user lane unavailable"))
+            self.abandon(ticket, closing=True)
+        current = self._current[lane_id]
+        if current is not None and current.phase == "queued":
+            # The dispatcher may have dequeued this ticket while awaiting an
+            # older cache owner. Its own operation has never been admitted.
+            self._publish(current, error=AdmissionClosed("user lane unavailable"))
+            self.abandon(current, closing=True)
+
     def _cache_identity(self, lane_id: int, user_id: str, cache_token: int) -> _UserPin:
         if (self.lane_count != 2 or type(lane_id) is not int
                 or not 0 <= lane_id < self.lane_count or type(user_id) is not str
@@ -273,18 +292,28 @@ class BoundedAdmission:
             if (type(affinity_key) is not str or not affinity_key.strip()
                     or len(affinity_key) > 256 or "\0" in affinity_key):
                 raise ValueError("explicit user affinity required")
+            if affinity_key in self._quarantined_users:
+                raise AdmissionClosed("user lane unavailable")
             pin = self._pins.get(affinity_key)
             if pin is None:
-                minimum = min(self._lane_loads)
+                available = tuple(index for index in range(self.lane_count) if self._lane_failures[index] is None)
+                if not available:
+                    raise AdmissionClosed("all user lanes unavailable")
+                minimum = min(self._lane_loads[index] for index in available)
                 lane = next((self._next_lane + offset) % self.lane_count
                             for offset in range(self.lane_count)
                             if self._lane_loads[(self._next_lane + offset)
-                                                % self.lane_count] == minimum)
+                                                % self.lane_count] == minimum
+                            and (self._next_lane + offset) % self.lane_count in available)
                 self._next_lane = (lane + 1) % self.lane_count
                 pin = self._pins[affinity_key] = _UserPin(lane)
             lane = pin.lane_id
+            if self._lane_failures[lane] is not None:
+                raise AdmissionClosed("user lane unavailable")
             pin.pending += 1
             ticket.affinity_key = affinity_key
+        if self._lane_failures[lane] is not None:
+            raise AdmissionClosed("user lane unavailable")
         ticket.lane_id = lane
         self._lane_loads[lane] += 1
         return lane
@@ -343,7 +372,7 @@ class BoundedAdmission:
             raise TimeoutError("request deadline expired")
         try:
             lane = self._assign(ticket, affinity_key)
-        except ValueError:
+        except (ValueError, AdmissionClosed):
             self.abandon(ticket)
             raise
         ticket.operation = operation
@@ -432,6 +461,11 @@ class BoundedAdmission:
         except BaseException as error:
             if current is not None:
                 self._publish(current, error=RuntimeError("admission dispatcher unavailable"))
+            if self._failure is None and self._lane_failures[lane_id] is not None:
+                # A classified local failure still owns its current ticket.
+                # It is retired only by close after the runtime proves idle.
+                self.quarantine_lane(lane_id, error)
+                return
             self._fail_closed(error)
             raise
         finally:

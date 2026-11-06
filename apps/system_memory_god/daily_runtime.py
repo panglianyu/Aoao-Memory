@@ -29,7 +29,7 @@ def _shared_options(profile, embedding, semantic_mode, clients, deadline_ns) -> 
     if profile.formal_embedding is not None:
         raise ValueError("formal and shared embedding cannot be combined")
     if (type(clients) is not dict or set(clients) != {"writer", "query"}
-            or clients["writer"] is clients["query"] or semantic_mode != "snapshot"):
+            or clients["writer"] is clients["query"] or semantic_mode not in {"snapshot", "paged_exact"}):
         raise ValueError("explicit distinct shared embedding roles required")
     for client in clients.values():
         _validate_shared_embedding(embedding, None, client, deadline_ns)
@@ -49,13 +49,13 @@ class DailyMemoryRuntime:
             raise ValueError("daily runtime requires the host Raw service")
         if sum(len(binding.conversations) for binding in profile.connectors) > MAX_DAILY_VECTOR_PARTITIONS:
             raise ValueError("daily vector scope capacity exceeded")
-        if semantic_mode not in {"disabled", "snapshot"}:
+        if semantic_mode not in {"disabled", "snapshot", "paged_exact"}:
             raise ValueError("invalid daily semantic mode")
         if (type(semantic_diagnostics) is not bool
-                or semantic_diagnostics and semantic_mode != "snapshot"):
+                or semantic_diagnostics and semantic_mode not in {"snapshot", "paged_exact"}):
             raise ValueError("invalid daily semantic diagnostics")
         if profile.formal_embedding is not None:
-            if embedding != "bge-m3" or semantic_mode != "snapshot":
+            if embedding != "bge-m3" or semantic_mode not in {"snapshot", "paged_exact"}:
                 raise ValueError("formal runtime requires bge-m3 snapshot")
         self._formal_embedding = profile.formal_embedding
         self.raw, self.bus = raw, bus
@@ -64,7 +64,7 @@ class DailyMemoryRuntime:
         self.vector = SupervisedDailyVector(
             self.stores, embedding=embedding,
             request_timeout=30 if embedding == "bge-m3" else 10,
-            enable_snapshot=semantic_mode == "snapshot", **formal_options,
+            enable_snapshot=semantic_mode == "snapshot", paged_exact=semantic_mode == "paged_exact", **formal_options,
             **({"embedding_client": shared_clients["writer"],
                 "embedding_deadline_ns": embedding_deadline_ns} if shared_clients else {}))
         self.derivation = DailyDerivation(self.stores, extractor, self.vector)
@@ -76,7 +76,7 @@ class DailyMemoryRuntime:
             scope.connector_id, scope.conversation_id) for scope in raw.configured_scopes())
         self.snapshot_cache = None
         self.snapshot_reader = None
-        if semantic_mode == "snapshot":
+        if semantic_mode in {"snapshot", "paged_exact"}:
             from .storage.daily_vector_snapshot import DailyVectorSnapshot
             from .storage.supervised_daily_vector_snapshot import SupervisedDailyVectorSnapshot
             partitions = tuple(PipelineScope(scope.user_id, scope.agent_id,
@@ -86,10 +86,11 @@ class DailyMemoryRuntime:
             self.snapshot_cache = DailyVectorSnapshot(
                 (Path(tempfile.mkdtemp(prefix="aoao-daily-semantic-", dir=profile.derived_root))
                  if profile.formal_embedding is not None else Path(tempfile.mkdtemp(prefix="aoao-daily-semantic-"))),
-                partitions, embedding=embedding,
+                partitions, embedding="synthetic" if embedding == "synthetic-1024" else embedding,
                 **({"binding_sha256": profile.formal_embedding.binding_sha256} if profile.formal_embedding is not None else {}))
             self.snapshot_reader = SupervisedDailyVectorSnapshot(
-                self.snapshot_cache, diagnostics=semantic_diagnostics, **formal_options,
+                self.snapshot_cache, embedding=embedding, diagnostics=semantic_diagnostics,
+                paged_runtime=self if semantic_mode == "paged_exact" else None, **formal_options,
                 **({"embedding_client": shared_clients["query"],
                     "embedding_deadline_ns": embedding_deadline_ns} if shared_clients else {}))
         raw_only = semantic_mode == "disabled"
@@ -115,12 +116,37 @@ class DailyMemoryRuntime:
         self._semantic_failed: set[PipelineScope] = set()
         self._semantic_publications: dict[PipelineScope, tuple[int, str, int]] = {}
         self._semantic_metadata: set[asyncio.Task] = set()
+        self._lease_waiting: set[PipelineScope] = set()
 
     def set_embedding_deadline(self, deadline_ns: int) -> None:
         """Forward the already registered operation deadline without starting IO."""
         self.vector.set_embedding_deadline(deadline_ns)
         if self.snapshot_reader is not None:
             self.snapshot_reader.set_embedding_deadline(deadline_ns)
+
+    async def handoff_embedding_deadline(self, generation, deadline_ns: int) -> None:
+        transports = (self.vector,) + ((self.snapshot_reader._transport,)
+                                      if self.snapshot_reader is not None else ())
+        await generation.handoff_deadline(deadline_ns, transports)
+
+    def cached_readiness(self) -> dict:
+        """Finite RAM-only readiness; never open stores or perform model IO."""
+        task = self._semantic_task
+        if task is not None and task.done() and self._state not in {"stopping", "stopped"}:
+            if task.cancelled() or task.exception() is not None:
+                return {"terminal": True, "reason": "publisher"}
+        if self._blocked_scopes:
+            return {"terminal": True, "reason": "derived"}
+        if any(value >= 3 for value in self._semantic_attempts.values()):
+            return {"terminal": True, "reason": ("capacity" if self._semantic_error == "vector_capacity_exceeded"
+                                                   else "publisher")}
+        if self.vector._deadline_fence_failed:
+            return {"terminal": True, "reason": "ownerunknown"}
+        if self.snapshot_reader is not None and self.snapshot_reader._transport._deadline_fence_failed:
+            return {"terminal": True, "reason": "ownerunknown"}
+        if self.snapshot_reader is not None and self.snapshot_reader._failed_page_owners:
+            return {"terminal": True, "reason": "ownerunknown"}
+        return {"terminal": False, "reason": "none"}
 
     def startup_diagnostic(self) -> dict:
         """Opt-in bounded startup facts; never include source identifiers or text."""
@@ -224,7 +250,8 @@ class DailyMemoryRuntime:
             self._notify_semantic(partition, "reader_recovered")
         elif (resolved and stamp is not None and stamp[0] == generation
               and stamp[1] == reader._ready.get(partition)
-              and stamp[1] == self.snapshot_cache._current.get(partition)
+              and stamp[1] == (self.snapshot_reader._ready.get(partition) if self.semantic_mode == "paged_exact"
+                               else self.snapshot_cache._current.get(partition))
               and partition not in self._semantic_dirty and not reader._lifecycle.locked()):
             result.update(status="current", reason="none")
         return result
@@ -296,6 +323,9 @@ class DailyMemoryRuntime:
                         raise RuntimeError("daily read preparation unavailable")
                 self._pending_scopes = set(scopes)
                 if self.snapshot_cache is not None:
+                    loop = asyncio.get_running_loop()
+                    self.snapshot_cache.on_lease_released = lambda partition: loop.call_soon_threadsafe(
+                        self._lease_released, partition)
                     self._semantic_task = asyncio.create_task(self._publish_semantic())
                     self._semantic_task.add_done_callback(self._semantic_finished)
                 self.raw.start_worker(self.bus, blocked_scopes=frozenset(scopes),
@@ -367,6 +397,11 @@ class DailyMemoryRuntime:
                 self._reasons = (("derived_recovering",) if self._pending_scopes else
                                  ("derived_recovery_incomplete",) if self._blocked_scopes else ())
 
+    def _lease_released(self, partition: PipelineScope) -> None:
+        if partition in self._lease_waiting:
+            self._lease_waiting.discard(partition)
+            self._notify_semantic(partition, "lease_retired")
+
     def _notify_semantic(self, partition: PipelineScope, task_id: str) -> None:
         if self.snapshot_cache is None or partition not in self.snapshot_cache.scopes:
             raise ValueError("unknown semantic scope")
@@ -432,7 +467,7 @@ class DailyMemoryRuntime:
         return approved
 
     async def _publish_semantic(self) -> None:
-        from .storage.daily_vector_snapshot import SnapshotCapacityError
+        from .storage.daily_vector_snapshot import SnapshotCapacityError, SnapshotLeasePressure
         cache, reader = self.snapshot_cache, self.snapshot_reader
         if cache is None or reader is None:
             raise ValueError("semantic publisher is not configured")
@@ -450,6 +485,38 @@ class DailyMemoryRuntime:
                     self._semantic_ready.discard(partition)
                     self._startup_note("snapshot_capture", partition)
                     try:
+                        if self.semantic_mode == "paged_exact":
+                            scope = Scope(partition.agent_id, partition.user_id,
+                                          partition.connector_id, partition.conversation_id)
+                            generation, resolved, failed = await _settle_write(asyncio.to_thread(
+                                self.raw.store.partition_publication_state, scope))
+                            if failed:
+                                self._semantic_failed.add(partition)
+                                self._semantic_state = "degraded"
+                                self._semantic_error = "derived_terminal"
+                                self._semantic_attempts[partition] = 3
+                                continue
+                            if not resolved:
+                                # Final task settlement will notify again. Do not
+                                # repeatedly clone a growing, unpublished corpus.
+                                self._semantic_state = "preparing"
+                                continue
+                            if (self.stores.partition(partition) / "vector_index.db").exists() and self.vector.worker_pid is None:
+                                await self.vector.warm_existing(partition)
+                            await reader.warm_paged(partition, generation)
+                            if await _settle_write(asyncio.to_thread(self.raw.store.partition_state, scope)) != (generation, True):
+                                raise _RecoveryGenerationChanged("semantic source changed")
+                            published_pid = reader.worker_pid
+                            if type(published_pid) is not int or published_pid <= 0:
+                                raise RuntimeError("paged reader exited before publication")
+                            self._semantic_publications[partition] = (generation, str(generation), published_pid)
+                            self._semantic_attempts.pop(partition, None)
+                            self._semantic_failed.discard(partition)
+                            self._semantic_ready.add(partition)
+                            self._semantic_error = "" if not self._semantic_failed else self._semantic_error
+                            self._semantic_state = "preparing" if self._semantic_dirty else "ready"
+                            self._startup_note("ready", partition)
+                            continue
                         scope = Scope(partition.agent_id, partition.user_id,
                                       partition.connector_id, partition.conversation_id)
                         before = await _settle_write(asyncio.to_thread(self.raw.store.partition_state, scope))
@@ -481,6 +548,14 @@ class DailyMemoryRuntime:
                         self._semantic_state = "preparing"
                         self._semantic_dirty.add(partition)
                         await asyncio.sleep(1)
+                    except SnapshotLeasePressure as exc:
+                        self._startup_failure(partition, "publication_capacity", exc)
+                        self._semantic_state = "preparing"
+                        self._semantic_error = "snapshot_lease_pressure"
+                        if cache.lease_pressure(partition):
+                            self._lease_waiting.add(partition)
+                        else:
+                            self._semantic_dirty.add(partition)
                     except SnapshotCapacityError as exc:
                         self._startup_failure(partition, "publication_capacity", exc)
                         self._semantic_failed.add(partition)

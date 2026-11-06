@@ -1,12 +1,16 @@
 # aru memory
 
-A Windows Add/Search memory service. SNAP-CAP-1 is an undeployed capacity repair candidate based on fixed AMC-ENTRY-1.8.4. It retains original messages and scoped vector, entity, graph, rule, journal and schedule evidence. Two of the 202 pinned Python audit files have capacity changes; two additional files only update candidate version constants. Private configuration, credentials, runtime data, models, operational controls and host-assistant history are excluded.
+A Windows Add/Search memory service. ARU-RECOVERY-2 is an isolated, undeployed integrated repair candidate based on SNAP-CAP-1 commit `46fd94d0df89f89a132ea6d8eb35e66c2b4684db`. It retains original messages and scoped vector, entity, graph, rule, journal and schedule evidence. Private configuration, credentials, runtime data, models, operational controls and host-assistant history are excluded.
 
 ## Candidate status
 
-SNAP-CAP-1 removes the fixed 5000-row snapshot threshold and checks actual vector and canonical ID bytes before capture, allocation and file reads. It keeps the 40 MiB whole-generation vector body, 2 MiB ID directory, 768 MiB cache, snapshot schemas, retrieval and deadlines. This is a capacity correctness patch, not a throughput claim or approval to replace an accepted evaluation deployment. See [PATCH-SNAP-CAP-1.md](PATCH-SNAP-CAP-1.md).
+ARU-RECOVERY-2 combines atomic deadline handoff, persistent shared extraction-call accounting, the strict empty-entity policy, complete paged exact vector search, and readiness that retains terminal failure causes. The default challenge path uses the existing persistent Chroma vectors instead of repeatedly publishing a complete numerical snapshot. Legacy snapshot readers remain available for compatibility.
 
-The following 1.8.4 notes describe the inherited base and its historical validation.
+This deliberately changes resource accounting: 40 MiB bounds each active query's controlled numerical working set and 2 MiB bounds its paged proof metadata; they no longer bound the whole corpus. Persistent storage and Chroma's resident index are separate. The 768 MiB total rebuildable cache limit, two lanes, one shared embedding process, queue limit32, 1700-second HTTP deadline and original two-second interactive query deadline remain. Full-corpus exact retrieval must meet that deadline; timeouts never authorize partial results.
+
+The candidate's complete related matrix and four growth sizes are being validated. It has not been deployed or accepted for the official Full task. Small synthetic checks do not prove Full throughput or completion. Historical SNAP-CAP-1 evidence is retained in [PATCH-SNAP-CAP-1.md](PATCH-SNAP-CAP-1.md).
+
+The following 1.8.4 notes describe the inherited base and historical validation, not the deployment or acceptance status of this candidate.
 
 The 1.8.4 policy preserves eligible nonempty time strings as literal text when they cannot represent an absolute instant. The complete original string is appended to valid record text and the timestamp becomes null, within the existing text limit. This includes partial dates, natural language, naive timestamps and invalid calendar strings; they are retained as literals, not certified as valid dates. It deliberately expands accepted input representations. See [PATCH184.md](PATCH184.md) and [VALIDATION-1.8.4.md](VALIDATION-1.8.4.md).
 
@@ -20,7 +24,7 @@ The bounded 1.8.4 first-request observer has now completed one SDK call and prod
 
 One relevant nine-module synthetic matrix passed 193 tests in 25.43 seconds, without skips or model calls. Changed-file Ruff and independent Python, security and Root code reviews accepted the scoped implementation. Limited Mypy retains one existing CLI finding; these synthetic checks alone do not establish real-source or Full success.
 
-The original official Smoke subsequently completed 46/46. A Full task was then started and failed during Add; later attempts also encountered an unavailable public ingress. Those facts do not establish that this new candidate has passed Smoke or Full. **1.8.4 is not claimed as deployed, formally accepted, recovered against the official data, or ready to resume Full.** The ngrok account's dev domain still needs to be claimed, and the original task's endpoint/version association remains unresolved.
+The original official Smoke subsequently completed 46/46. A Full task was then started and failed during Add; later attempts also encountered an unavailable public ingress. Subsequent operational recovery and 1.8.4 deployment are separate from this candidate. The earlier snapshots of endpoint and deployment status in historical validation documents are not current service checks. ARU-RECOVERY-2 has not passed an official Smoke or Full.
 
 Publishing this source does not change the entry's industrial group, grant evaluation quota, or establish compliance with the open-source track's prescribed models. The accepted 1.0 source and 1.8.1 fixed commit remain unchanged. Earlier evidence is retained in [VALIDATION-1.8.1.md](VALIDATION-1.8.1.md), [VALIDATION-1.6.md](VALIDATION-1.6.md), [JOB17.md](JOB17.md), [PATCH18.md](PATCH18.md) and their metadata-only reports.
 
@@ -39,7 +43,7 @@ The documented request deadline is 1700 seconds, including body reading and queu
 Use 64-bit Windows, the Python launcher and Python 3.10. The reference interpreter was 3.10.11. Use a short checkout path.
 
 ~~~powershell
-git clone --branch codex/snap-cap-1 https://github.com/panglianyu/Aoao-Memory.git
+git clone --branch codex/aru-recovery-2 https://github.com/panglianyu/Aoao-Memory.git
 cd Aoao-Memory
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup.ps1 -Dev
 ~~~
@@ -73,7 +77,7 @@ Check-config performs no model call. Normal startup protects the credential dire
 
 Structured extraction explicitly disables thinking only for a validated official DeepSeek HTTPS origin. The base system prompt, model, source identities and strict output schema remain unchanged. In 1.8.2, invalid JSON, group shape or domain payload results may trigger a static correction message inside the same-source lock. That message contains only fixed constraints and a closed reason code, never the previous response body. These later requests are not byte-for-byte identical to the old input policy.
 
-The maximum is three started SDK requests per source and content hash within one extractor instance. Calls already started remain counted across cancellation or transport errors. Up to 128 RAM slots retain closed failure metadata; a valid durable cache takes precedence. This is not a persistent, cross-process or cross-restart total-call budget, and it does not authorize re-running failed official data. Private diagnostics still exclude response text and reasoning.
+The candidate persistently preconsumes at most three SDK requests per exact source/content/processor/model/prompt identity across its five structured domains, instances and restarts. Started or unknown calls are never refunded. The128 RAM limit covers active owners only; historical terminal records remain in the private ledger. A valid durable cache takes precedence. Old sources with unknown historical usage cannot be reset to zero. This does not authorize replaying failed official data. Private diagnostics exclude response text and reasoning.
 
 ## API example
 
@@ -98,7 +102,7 @@ Use integer Unix milliseconds. Limits include a 2 MiB JSON body, 256 messages, 8
 
 The command above covers time-representation and inherited correction/publication regressions. The included tests are synthetic and forbid unplanned model loading by default. Operator-recovery fixtures additionally assume the reference short-path Windows scratch layout; they are audit cases, not a portable unattended suite. Maintenance recovery CLIs contain fixed operator paths and are not normal setup or production launch commands. Do not point them at a live data root.
 
-The new time module and inherited regression modules are included, with static test-import closure checked. Relative to public 1.8.2, three runtime files have logical changes: grouped extraction and the API/CLI version constants. Twelve additional runtime files differ only in line endings, copied unchanged from the frozen candidate. See [CONTRIBUTING.md](CONTRIBUTING.md) for changes. [SOURCE_MANIFEST.json](SOURCE_MANIFEST.json) identifies the exact runtime files; [PACKAGE_MANIFEST.json](PACKAGE_MANIFEST.json) inventories this package without a self-hash cycle.
+This candidate includes the complete related regression set plus new deadline, durable budget, paged retrieval, growth and fault tests. See [PATCH-ARU-RECOVERY-2.md](PATCH-ARU-RECOVERY-2.md) for the implementation and resource changes. Source/package manifests are regenerated at the candidate's fixed save point; inherited manifests must not be used to authenticate uncommitted development changes.
 
 ## Using with Codex
 
@@ -106,7 +110,7 @@ Codex reads [AGENTS.md](AGENTS.md) for verified commands, architecture and sourc
 
 ## Remaining limits
 
-Coverage beyond the single selected real source, deployment, official version association, targeted recovery, stable public ingress, Full completion and full-workload quality remain unproved. The earlier Smoke success belongs to the original resumed task and implementation, not to this candidate. The seven observed SDK calls and actual new checks are recorded in [VALIDATION-1.8.4.md](VALIDATION-1.8.4.md); wider inherited type-check findings remain recorded in [VALIDATION-1.8.2.md](VALIDATION-1.8.2.md). Fresh dependency installation and production privacy acceptance also remain unproved. Packaging ran no model or evaluation.
+Large-corpus performance, this candidate's deployment, official version acceptance, Full completion and full-workload quality require their own evidence. The earlier Smoke success belongs to the original resumed task and implementation. Historical real-source calls are recorded in [VALIDATION-1.8.4.md](VALIDATION-1.8.4.md); they are not new checks of ARU-RECOVERY-2. Changed runtime type checking retains33 existing findings in two files with the same normalized diagnostics as its fixed base. Fresh dependency installation and production privacy acceptance remain unproved. Packaging itself runs no model or evaluation.
 
 ## License
 

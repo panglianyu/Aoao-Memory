@@ -56,6 +56,8 @@ def serve_snapshot(connection: Connection, root_text: str, embedding: str, diagn
             raise ValueError("formal binding requires bge-m3")
         formal_embedding = FormalEmbeddingBinding.from_payload(formal_embedding)
     prepared: dict[PipelineScope, SnapshotData] = {}
+    paged_prepared: dict[PipelineScope, int] = {}
+    paged_session = None
     root = Path(root_text)
     if embedding == "bge-m3":
         try:
@@ -74,8 +76,9 @@ def serve_snapshot(connection: Connection, root_text: str, embedding: str, diagn
             if embedding_client is not None:
                 embedding_client.close()
             return
-    elif embedding in {"synthetic", "synthetic-stall"}:
-        embed = _synthetic_embed
+    elif embedding in {"synthetic", "synthetic-stall", "synthetic-1024"}:
+        from .daily_vector_worker import _synthetic_embed_1024
+        embed = _synthetic_embed_1024 if embedding == "synthetic-1024" else _synthetic_embed
     else:
         raise ValueError("unsupported snapshot embedding")
     try:
@@ -83,6 +86,7 @@ def serve_snapshot(connection: Connection, root_text: str, embedding: str, diagn
                               "actual": actual}, separators=(",", ":")).encode() if formal_embedding is not None else b'{"version":1,"ready":true}')
         while True:
             request = None
+            result: object
             diagnostic: dict = {"request_id": 0, "stage": "input", "error_code": "child_input_rejected",
                           "error_type": "none", "embedding_ms": None, "numerical_ms": None,
                           "complete": False}
@@ -96,7 +100,41 @@ def serve_snapshot(connection: Connection, root_text: str, embedding: str, diagn
                     raise ValueError("invalid snapshot request")
                 scope = PipelineScope(*request["scope"])
                 diagnostic["request_id"] = request["id"]
-                if request["op"] == "warm_snapshot":
+                if request["op"] in {"warm_paged", "page_score_begin", "page_score", "page_score_end"}:
+                    from .daily_vector_pages import BINDING_KEYS, PagedCosine, binding, check_deadline
+                    if set(request) != base | {"page"} or type(request["page"]) is not dict:
+                        raise ValueError("invalid paged score command")
+                    page = request["page"]
+                    if request["op"] == "warm_paged":
+                        if (set(page) != {"generation"} or type(page["generation"]) is not int
+                                or page["generation"] < 0 or scope not in paged_prepared and len(paged_prepared) >= 8
+                                or paged_session is not None):
+                            raise ValueError("invalid paged preparation")
+                        paged_prepared[scope] = page["generation"]
+                        result = True
+                    elif request["op"] == "page_score_begin":
+                        if (set(page) != BINDING_KEYS | {"query", "limit"}
+                                or type(page["query"]) is not str or not page["query"].strip()
+                                or len(page["query"]) > MAX_MEMORY_QUERY_CHARS
+                                or paged_session is not None or paged_prepared.get(scope) != page["generation"]):
+                            raise ValueError("invalid paged score start")
+                        session_binding = binding(page)
+                        if embedding_client is not None:
+                            _bind_shared_deadline(embedding_client, page["deadline_ns"])
+                        query = embed([page["query"].strip()])[0]
+                        check_deadline(page["deadline_ns"])
+                        scorer = PagedCosine(session_binding, query, page["limit"])
+                        paged_session = (scope, scorer)
+                        result = scorer.cursor.ack()
+                    else:
+                        if paged_session is None or paged_session[0] != scope:
+                            raise ValueError("paged score session unavailable")
+                        if request["op"] == "page_score":
+                            result = paged_session[1].feed(page)
+                        else:
+                            result = paged_session[1].finish(page)
+                            paged_session = None
+                elif request["op"] == "warm_snapshot":
                     if set(request) != base | {"generation"}:
                         raise ValueError("invalid snapshot preparation")
                     if scope not in prepared and len(prepared) >= 8:
@@ -105,7 +143,7 @@ def serve_snapshot(connection: Connection, root_text: str, embedding: str, diagn
                     prepared[scope] = load_snapshot(root, scope, request["generation"],
                         embedding="synthetic" if embedding == "synthetic-stall" else embedding,
                         **({"binding_sha256": formal_embedding.binding_sha256} if formal_embedding is not None else {}))
-                    result: object = True
+                    result = True
                 elif request["op"] == "search_cosine_hits":
                     if (set(request) != base | {"query", "limit"}
                             or type(request["query"]) is not str

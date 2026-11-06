@@ -50,7 +50,7 @@ def create_memory_service(profile, *, mode="memory-full-v1", extractor=None,
         raise ValueError("unknown memory profile")
     if profile.derived_root is None:
         raise ValueError("explicit derived root required")
-    if semantic_mode == "snapshot" and mode != "legacy-daily-v1":
+    if semantic_mode in {"snapshot", "paged_exact"} and mode != "legacy-daily-v1":
         segment = profile.derived_root / ("0" * 64) / "vectors" / ("0" * 36)
         if os.name == "nt" and (len(str(segment).encode("utf-16-le")) // 2 >= 248
                 or len(str(segment / "index_metadata.pickle").encode("utf-16-le")) // 2 >= 260):

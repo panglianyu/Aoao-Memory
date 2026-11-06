@@ -116,7 +116,7 @@ async def test_exhausted_publication_in_one_partition_does_not_terminalize_anoth
 
 
 @pytest.mark.asyncio
-async def test_capacity_publication_terminal_is_real_and_preserves_originals(tmp_path):
+async def test_temporary_lease_pressure_recovers_and_preserves_originals(tmp_path):
     from kernel.memory_pipeline_models import PipelineScope
     from tests.test_daily_memory_early_acceptance import daily, ingress
 
@@ -130,13 +130,19 @@ async def test_capacity_publication_terminal_is_real_and_preserves_originals(tmp
             scope, first = await ingress(raw, bus, "capacity-original-first")
             await publication_until(runtime, partition, lambda state: state["status"] == "current")
             scope, second = await ingress(raw, bus, "capacity-original-second")
-            terminal = await publication_until(runtime, partition, lambda state: state["terminal"])
-            assert terminal["reason"] == "publication_attempts_exhausted"
+            await publication_until(runtime, partition,
+                lambda state: runtime.health()["semantic_reason"] == "snapshot_lease_pressure")
+            assert runtime._semantic_attempts.get(partition, 0) < 3
+            assert partition in runtime._lease_waiting
             assert raw.store.get(scope, first).content == "capacity-original-first"
             assert raw.store.get(scope, second).content == "capacity-original-second"
             assert all(task["status"] == "succeeded" for task in raw.store.list_derivations(scope, second))
         finally:
             runtime.snapshot_cache.release(lease)
+        restored = await publication_until(runtime, partition, lambda state: state["status"] == "current")
+        assert restored["terminal"] is False and partition not in runtime._lease_waiting
+        assert raw.store.get(scope, first).content == "capacity-original-first"
+        assert raw.store.get(scope, second).content == "capacity-original-second"
 
 
 @pytest.mark.asyncio

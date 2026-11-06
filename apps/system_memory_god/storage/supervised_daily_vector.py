@@ -89,10 +89,37 @@ class _SnapshotQuery:
             return dict(self.values)
 
 
+class _DeadlineFence:
+    def __init__(self, transport):
+        self.transport = transport
+
+    @property
+    def deadline_ns(self):
+        return self.transport._embedding_deadline_ns
+
+    def commit_deadline(self, deadline_ns: int) -> None:
+        _embedding_deadline(deadline_ns)
+        transport = self.transport
+        with transport._pending_guard:
+            if (transport._deadline_fence is not self or transport._pending
+                    or transport._active_request is not None or transport._closed):
+                raise RuntimeError("deadline fence not exclusively held")
+            transport._embedding_deadline_ns = deadline_ns
+
+    def release(self, *, failed: bool = False) -> None:
+        transport = self.transport
+        with transport._pending_guard:
+            if transport._deadline_fence is not self:
+                raise RuntimeError("deadline fence ownership changed")
+            transport._deadline_fence_failed |= failed
+            transport._deadline_fence = None
+
+
 class SupervisedDailyVector:
     def __init__(self, stores: ScopedStores, *, embedding: str,
                  request_timeout: float = 10.0, max_pending: int = 16,
                  enable_snapshot: bool = False, process_role: str = "writer", diagnostics: bool = False,
+                 paged_exact: bool = False,
                  formal_embedding=None, embedding_client=None, embedding_deadline_ns=None):
         _validate_shared_embedding(embedding, formal_embedding, embedding_client, embedding_deadline_ns)
         if formal_embedding is not None:
@@ -101,22 +128,25 @@ class SupervisedDailyVector:
             if embedding != "bge-m3" or type(formal_embedding) is not FormalEmbeddingBinding:
                 raise ValueError("explicit formal bge-m3 binding required")
         if (type(stores) is not ScopedStores
-                or embedding not in {"bge-m3", "synthetic", "synthetic-stall",
+                or embedding not in {"bge-m3", "synthetic", "synthetic-1024", "synthetic-stall",
                                      "synthetic-drop-ack", "synthetic-wrong-id",
                                      "synthetic-bad-ready"}
                 or type(request_timeout) not in {int, float}
                 or not 0 < request_timeout <= 60
                 or type(max_pending) is not int or not 1 <= max_pending <= 64
                 or type(diagnostics) is not bool or diagnostics and process_role != "snapshot"
-                or type(enable_snapshot) is not bool or process_role not in {"writer", "snapshot"}
+                or type(enable_snapshot) is not bool or type(paged_exact) is not bool
+                or paged_exact and (enable_snapshot or process_role != "writer")
+                or process_role not in {"writer", "snapshot"}
                 or process_role == "snapshot" and (enable_snapshot or embedding not in {
-                    "bge-m3", "synthetic", "synthetic-stall"})):
+                    "bge-m3", "synthetic", "synthetic-1024", "synthetic-stall"})):
             raise ValueError("invalid supervised vector configuration")
         self.stores = stores
         self.embedding = embedding
         self.request_timeout = float(request_timeout)
         self.max_pending = max_pending
         self.enable_snapshot = enable_snapshot
+        self.paged_exact = paged_exact
         self.process_role = process_role
         self.diagnostics = diagnostics
         self.formal_embedding = formal_embedding
@@ -172,6 +202,54 @@ class SupervisedDailyVector:
         self._recovery_task: asyncio.Task | None = None
         self._recovery_wake = asyncio.Event()
         self._closed = False
+        self._deadline_fence: _DeadlineFence | None = None
+        self._deadline_fence_failed = False
+        self._admission_owners: set[object] = set()
+
+    async def acquire_session_owner(self, deadline: float) -> object:
+        while True:
+            with self._pending_guard:
+                if self._closed or self._deadline_fence_failed:
+                    raise RuntimeError("vector session unavailable")
+                if self._deadline_fence is None:
+                    token = object()
+                    self._admission_owners.add(token)
+                    return token
+            if time.monotonic() >= deadline:
+                raise TimeoutError("vector session admission expired")
+            await asyncio.sleep(min(0.005, max(0, deadline - time.monotonic())))
+
+    def release_session_owner(self, token: object) -> None:
+        with self._pending_guard:
+            if token not in self._admission_owners:
+                raise RuntimeError("vector session owner changed")
+            self._admission_owners.remove(token)
+
+    async def acquire_deadline_fence(self, deadline_ns: int) -> _DeadlineFence:
+        """Pause admission, then await genuine retirement of accepted RPC owners."""
+        _embedding_deadline(deadline_ns)
+        token = _DeadlineFence(self)
+        installed = False
+        try:
+            while True:
+                if time.monotonic_ns() >= deadline_ns:
+                    raise TimeoutError("deadline handoff admission expired")
+                with self._pending_guard:
+                    if self._closed or self._deadline_fence_failed:
+                        raise RuntimeError("deadline handoff unavailable")
+                    if self._deadline_fence is None:
+                        self._deadline_fence = token
+                        installed = True
+                    if (self._deadline_fence is token and not self._pending and self._active_request is None
+                            and not self._admission_owners):
+                        if self._lifecycle.acquire(blocking=False):
+                            self._lifecycle.release()
+                            return token
+                await asyncio.sleep(min(0.005, max(0, (deadline_ns - time.monotonic_ns()) / 1e9)))
+        except BaseException:
+            if installed:
+                token.release()
+            raise
 
     @property
     def worker_pid(self) -> int | None:
@@ -228,7 +306,7 @@ class SupervisedDailyVector:
 
     def _formal_result(self, operation, result, arguments):
         """Validate the existing business acknowledgement before committing facts."""
-        if operation in {"warm_existing", "warm_snapshot"}:
+        if operation in {"warm_existing", "warm_snapshot", "warm_paged"}:
             if result is not True:
                 raise RuntimeError("invalid vector response")
         elif operation == "contains":
@@ -265,6 +343,9 @@ class SupervisedDailyVector:
                     body = base64.b64decode(snapshot["f32"], validate=True)
                     if len(body) != 4096 or hashlib.sha256(body).hexdigest() != snapshot["sha256"] or not all(math.isfinite(value) for value in struct.unpack("<1024f", body)):
                         raise RuntimeError("invalid vector response")
+        elif operation.startswith("page_"):
+            if type(result) is not dict:
+                raise RuntimeError("invalid vector page response")
         else:
             raise RuntimeError("invalid vector response")
 
@@ -737,7 +818,7 @@ class SupervisedDailyVector:
             raise ValueError("complete pipeline scope required")
         clock = time.monotonic
         deadline = (_query.deadline if _query is not None else _deadline if _deadline is not None else clock() + (
-            60 if self.process_role == "snapshot" and operation == "warm_snapshot" else self.request_timeout))
+            60 if self.process_role == "snapshot" and operation in {"warm_snapshot", "warm_paged"} else self.request_timeout))
         embedding_deadline_ns = self._embedding_deadline_ns
         if self.embedding_client is not None:
             if _embedding_deadline(embedding_deadline_ns) <= time.monotonic_ns():
@@ -979,19 +1060,33 @@ class SupervisedDailyVector:
 
     async def _invoke(self, operation: str, scope: PipelineScope, *,
                       keep_owner: bool = False, allow_start: bool = True,
-                      _query: _SnapshotQuery | None = None, **arguments):
+                      _query: _SnapshotQuery | None = None, _deadline_cap: float | None = None,
+                      _admission_owner: object | None = None, **arguments):
         deadline = (_query.deadline if _query is not None else time.monotonic() + (
-            60 if self.process_role == "snapshot" and operation == "warm_snapshot" else self.request_timeout))
-        with self._pending_guard:
-            if self._closed:
-                if _query is not None:
-                    _query.fail("not_prepared")
-                raise RuntimeError("vector worker closed")
-            if self._pending >= self.max_pending:
-                if _query is not None:
-                    _query.fail("queue_rejected")
-                raise RuntimeError("vector queue full")
-            self._pending += 1
+            60 if self.process_role == "snapshot" and operation in {"warm_snapshot", "warm_paged"} else self.request_timeout))
+        if _deadline_cap is not None:
+            if type(_deadline_cap) not in {int, float} or not math.isfinite(_deadline_cap):
+                raise ValueError("invalid vector operation deadline")
+            deadline = min(deadline, _deadline_cap)
+        while True:
+            with self._pending_guard:
+                if self._closed or self._deadline_fence_failed:
+                    if _query is not None:
+                        _query.fail("not_prepared")
+                    raise RuntimeError("vector deadline handoff unavailable" if self._deadline_fence_failed
+                                       else "vector worker closed")
+                if _admission_owner is not None and _admission_owner not in self._admission_owners:
+                    raise RuntimeError("vector session owner changed")
+                if self._deadline_fence is None or _admission_owner is not None:
+                    if self._pending >= self.max_pending:
+                        if _query is not None:
+                            _query.fail("queue_rejected")
+                        raise RuntimeError("vector queue full")
+                    self._pending += 1
+                    break
+            if time.monotonic() >= deadline:
+                raise TimeoutError("vector deadline handoff admission expired")
+            await asyncio.sleep(min(0.005, max(0, deadline - time.monotonic())))
         cancel_event = threading.Event()
         deadline_signal = None
         state = {"started": False, "released": False}
@@ -1200,7 +1295,7 @@ class SupervisedDailyVector:
         projected = [{key: record[key] for key in
                       ("memory_id", "payload", "payload_hash")}
                      for record in records]
-        receipts = await self._invoke("put_snapshot" if self.enable_snapshot else "put",
+        receipts = await self._invoke("put_snapshot" if self.enable_snapshot or self.paged_exact else "put",
                                       scope, records=projected)
         expected = [{"memory_id": record["memory_id"],
                      "payload_hash": record["payload_hash"],
@@ -1210,7 +1305,7 @@ class SupervisedDailyVector:
         if (type(receipts) is not list or len(receipts) != len(expected)
                 or any(type(receipt) is not dict
                        or set(receipt) != ({*required, "embedding_dim", "snapshot"}
-                                          if self.enable_snapshot else {*required, "embedding_dim"})
+                                          if self.enable_snapshot or self.paged_exact else {*required, "embedding_dim"})
                        or any(receipt[key] != required[key] for key in required)
                        or type(receipt["embedding_dim"]) is not int
                        or not 1 <= receipt["embedding_dim"] <= 65536
@@ -1218,6 +1313,9 @@ class SupervisedDailyVector:
             raise RuntimeError("vector write receipt mismatch")
         if self.enable_snapshot:
             self._capture_snapshot(scope, receipts)
+        elif self.paged_exact:
+            from .daily_vector_pages import validate_receipts
+            validate_receipts(receipts)
         with self._pending_guard:
             if not self._closed:
                 self._prepared_scopes.add(scope)
@@ -1229,11 +1327,11 @@ class SupervisedDailyVector:
         projected = [{key: record[key] for key in
                       ("memory_id", "payload", "payload_hash")}
                      for record in records]
-        rows = await self._invoke("receipts_snapshot" if self.enable_snapshot else "receipts",
+        rows = await self._invoke("receipts_snapshot" if self.enable_snapshot or self.paged_exact else "receipts",
                                  scope, records=projected)
         if type(rows) is not list or len(rows) != len(projected):
             raise RuntimeError("vector receipt unavailable")
-        if self.enable_snapshot:
+        if self.enable_snapshot or self.paged_exact:
             expected = [{"memory_id": record["memory_id"], "payload_hash": record["payload_hash"],
                          "text_hash": hashlib.sha256(record["payload"]["text"].encode()).hexdigest()}
                         for record in projected]
@@ -1242,7 +1340,11 @@ class SupervisedDailyVector:
                    or type(row["embedding_dim"]) is not int or not 1 <= row["embedding_dim"] <= 65536
                    for row, wanted in zip(rows, expected)):
                 raise RuntimeError("vector receipt mismatch")
-            self._capture_snapshot(scope, rows)
+            if self.enable_snapshot:
+                self._capture_snapshot(scope, rows)
+            else:
+                from .daily_vector_pages import validate_receipts
+                validate_receipts(rows)
             return tuple({key: value for key, value in row.items() if key != "snapshot"} for row in rows)
         return tuple(rows)
 

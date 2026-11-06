@@ -4,6 +4,8 @@ import asyncio
 from contextlib import asynccontextmanager
 from dataclasses import replace
 import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -13,12 +15,17 @@ from kernel.challenge_diagnostics import DiagnosticError, _encode_record
 from kernel.memory_pipeline_models import SourceRevision
 from system_memory_god.grouped_extractor import GroupedDailyExtractor, _GROUP_HASH, _GROUP_PROMPT
 from system_memory_god.storage.extraction_snapshots import STRUCTURED_DOMAINS, extraction_key
+from system_memory_god.storage.extraction_call_budget import ExtractionCallBudget
 
 
 class Stores:
     def __init__(self):
         self.outputs = {}
         self.writes = 0
+        self.directory = TemporaryDirectory(prefix="aru-budget-fixture-")
+
+    def call_budgets(self, scope):
+        return ExtractionCallBudget(Path(self.directory.name), scope)
 
     def extractions(self, scope):
         parent = self
@@ -63,6 +70,13 @@ def invalid_response():
 
 async def guard():
     pass
+
+
+async def synthetic_fresh():
+    return "fresh"
+
+
+guard.budget_origin = synthetic_fresh
 
 
 def extractor(stores, sdk):
@@ -113,7 +127,7 @@ async def test_three_invalid_calls_are_not_repeated_by_other_domains_or_raw_retr
             assert b"private" not in _encode_record("prepare", caught.value, domain, 3)
     assert sdk.await_count == 3
     assert stores.writes == 0
-    assert "private" not in repr(worker._group_budgets)
+    assert "private" not in repr(worker._locks)
 
 
 @pytest.mark.asyncio
@@ -132,7 +146,7 @@ async def test_cancellation_consumes_a_started_call_without_permanent_failure_be
     worker = extractor(stores, AsyncMock(side_effect=create))
     source, message = inputs()
     pending = asyncio.create_task(worker.extract_guarded("entity", message, source, 2048, guard))
-    await started.wait()
+    await asyncio.wait_for(started.wait(), timeout=5)
     pending.cancel()
     with pytest.raises(asyncio.CancelledError):
         await pending
@@ -153,10 +167,10 @@ async def test_transport_errors_can_retry_but_do_not_refund_or_retain_exception_
     for domain in ("entity", "graph"):
         with pytest.raises(RuntimeError, match="private-transport"):
             await worker.extract_guarded(domain, message, source, 2048, guard)
-        assert "private" not in repr(worker._group_budgets)
+        assert "private" not in repr(worker._locks)
     assert await worker.extract_guarded("rule", message, source, 2048, guard) == ()
     assert sdk.await_count == 3 and stores.writes == 1
-    assert worker._group_budgets == {}
+    assert worker._locks == {}
 
 
 @pytest.mark.asyncio
@@ -187,6 +201,8 @@ async def test_guard_is_checked_before_correction_and_shared_failure():
         guards += 1
         if guards == 3:
             raise RuntimeError("source revoked")
+
+    revoked_before_correction.budget_origin = synthetic_fresh
 
     with pytest.raises(RuntimeError, match="source revoked"):
         await worker.extract_guarded("entity", message, source, 2048, revoked_before_correction)
@@ -222,7 +238,7 @@ async def test_guard_revocation_before_first_sdk_does_not_keep_an_unused_slot():
     with pytest.raises(RuntimeError, match="source revoked"):
         await worker.extract_guarded("entity", message, source, 2048, revoke_before_call)
     assert sdk.await_count == 0 and stores.writes == 0
-    assert worker._group_budgets == {}
+    assert worker._locks == {}
 
 
 @pytest.mark.asyncio
@@ -238,6 +254,8 @@ async def test_successful_result_is_not_written_after_guard_revocation():
         calls += 1
         if calls == 3:
             raise RuntimeError("source revoked")
+
+    revoked_before_write.budget_origin = synthetic_fresh
 
     with pytest.raises(RuntimeError, match="source revoked"):
         await worker.extract_guarded("entity", message, source, 2048, revoked_before_write)
@@ -255,11 +273,11 @@ async def test_scope_revision_and_content_hash_have_separate_budgets():
         with pytest.raises(DiagnosticError):
             await worker.extract_guarded("entity", message, source, 2048, guard)
     assert sdk.await_count == 15
-    assert len(worker._group_budgets) == 5
+    assert worker._locks == {}
 
 
 @pytest.mark.asyncio
-async def test_failure_slots_are_bounded_and_a_successful_cache_takes_precedence():
+async def test_failure_history_does_not_fill_active_slots_and_cache_takes_precedence():
     stores = Stores()
     sdk = AsyncMock(return_value=invalid_response())
     worker = extractor(stores, sdk)
@@ -268,11 +286,11 @@ async def test_failure_slots_are_bounded_and_a_successful_cache_takes_precedence
         with pytest.raises(DiagnosticError):
             await worker.extract_guarded("entity", message, source, 2048, guard)
     assert sdk.await_count == 384
-    assert len(worker._group_budgets) == 128
+    assert worker._locks == {}
     source, message = inputs(message_id="slot-overflow")
     with pytest.raises(DiagnosticError) as caught:
         await worker.extract_guarded("entity", message, source, 2048, guard)
-    assert caught.value.safe_reason == "source_budget" and sdk.await_count == 384
+    assert caught.value.safe_reason == "json" and sdk.await_count == 387
 
     first_source, first_message = inputs(message_id="message-0", content_hash="0" * 64)
     from kernel.memory_pipeline_models import PipelineScope
@@ -281,4 +299,4 @@ async def test_failure_slots_are_bounded_and_a_successful_cache_takes_precedence
     stores.extractions(scope).put(first_source, "entity", first_message.content_hash,
                                   {domain: [] for domain in STRUCTURED_DOMAINS})
     assert await worker.extract_guarded("entity", first_message, first_source, 2048, guard) == ()
-    assert len(worker._group_budgets) == 127 and sdk.await_count == 384
+    assert worker._locks == {} and sdk.await_count == 387

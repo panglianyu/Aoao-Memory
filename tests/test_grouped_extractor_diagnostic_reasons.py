@@ -3,6 +3,8 @@
 from contextlib import asynccontextmanager
 import hashlib
 import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
 import pytest
@@ -12,12 +14,17 @@ from kernel.memory_pipeline_models import SourceRevision
 from system_memory_god.grouped_extractor import GroupedDailyExtractor, _GROUP_HASH, _GROUP_PROMPT
 from system_memory_god.storage.extraction_snapshots import STRUCTURED_DOMAINS, validate_group
 from system_memory_god.storage.derived_evidence import validate_payload
+from system_memory_god.storage.extraction_call_budget import ExtractionCallBudget
 
 
 class FakeStores:
     def __init__(self):
         self.cached = None
         self.writes = 0
+        self.directory = TemporaryDirectory(prefix="aru-diagnostic-budget-")
+
+    def call_budgets(self, scope):
+        return ExtractionCallBudget(Path(self.directory.name), scope)
 
     def extractions(self, scope):
         return self
@@ -56,6 +63,13 @@ class HookedExtractor(GroupedDailyExtractor):
 
 async def guard():
     pass
+
+
+async def synthetic_fresh():
+    return "fresh"
+
+
+guard.budget_origin = synthetic_fresh
 
 
 def response(content, finish="stop"):

@@ -2,6 +2,8 @@
 
 from contextlib import asynccontextmanager
 import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -14,6 +16,7 @@ from system_memory_god.grouped_extractor import (
     GroupedDailyExtractor, _GROUP_HASH, _GROUP_PROMPT, provider_request_options,
 )
 from system_memory_god.storage.extraction_snapshots import STRUCTURED_DOMAINS
+from system_memory_god.storage.extraction_call_budget import ExtractionCallBudget
 
 
 @pytest.mark.parametrize("url", [
@@ -41,6 +44,10 @@ class Stores:
     def __init__(self):
         self.cached = None
         self.writes = 0
+        self.directory = TemporaryDirectory(prefix="aru-provider-budget-")
+
+    def call_budgets(self, scope):
+        return ExtractionCallBudget(Path(self.directory.name), scope)
 
     def extractions(self, scope):
         return self
@@ -69,6 +76,13 @@ def source_message():
 
 async def guard():
     pass
+
+
+async def synthetic_fresh():
+    return "fresh"
+
+
+guard.budget_origin = synthetic_fresh
 
 
 def response(*, finish="stop", content=None):

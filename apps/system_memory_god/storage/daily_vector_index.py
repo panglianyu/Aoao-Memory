@@ -285,6 +285,8 @@ class DailyVectorIndex:
     async def put(self, scope: PipelineScope, records: list[dict]) -> None:
         def write():
             with self._lock:
+                if getattr(self, "_page_read", None) is not None:
+                    raise RuntimeError("vector read session owns partition")
                 collection = self._collection(scope)
                 for record in records:
                     key, text = record["memory_id"], record["payload"]["text"]
@@ -343,6 +345,98 @@ class DailyVectorIndex:
                     receipts.append(receipt)
                 return tuple(receipts)
         return await asyncio.to_thread(read)
+
+    def begin_page_read(self, scope: PipelineScope, request: dict) -> dict:
+        from .daily_vector_pages import BINDING_KEYS, PageCursor
+        if set(request) != BINDING_KEYS:
+            raise ValueError("invalid vector read session")
+        with self._lock:
+            if getattr(self, "_page_read", None) is not None or scope.partition_id not in self._collections:
+                raise RuntimeError("vector page owner unavailable")
+            cursor = PageCursor(request)
+            self._page_read: tuple[PipelineScope, object] | None = (scope, cursor)
+            return cursor.ack()
+
+    def read_numeric_page(self, scope: PipelineScope, request: dict) -> dict:
+        from .daily_vector_pages import BINDING_KEYS, PAGE_ROWS, check_deadline, hash_text
+        if set(request) != BINDING_KEYS | {"sequence", "last_key", "records"}:
+            raise ValueError("invalid vector page request")
+        with self._lock:
+            active = getattr(self, "_page_read", None)
+            if active is None or active[0] != scope:
+                raise RuntimeError("vector page owner unavailable")
+            cursor = active[1]
+            cursor.verify(request)
+            records = request["records"]
+            if type(records) is not list or not 1 <= len(records) <= PAGE_ROWS:
+                raise ValueError("invalid vector page size")
+            for record in records:
+                if (type(record) is not dict or set(record) != {"memory_id", "payload_hash", "text_hash", "text_bytes"}
+                        or type(record["text_bytes"]) is not int or not 0 <= record["text_bytes"] <= 32768):
+                    raise ValueError("invalid vector page proof")
+                identity(record["memory_id"])
+                hash_text(record["payload_hash"])
+                hash_text(record["text_hash"])
+            ids = [row["memory_id"] for row in records]
+            if ids != sorted(set(ids)) or ids[0] <= cursor.last_key:
+                raise ValueError("vector page order differs")
+            collection = self._collections[scope.partition_id]
+            result = []
+            start = 0
+            while start < len(records):
+                check_deadline(cursor.binding["deadline_ns"])
+                end, metadata_bytes = start, 0
+                while end < len(records):
+                    cost = records[end]["text_bytes"] * 8 + 2048
+                    if end > start and metadata_bytes + cost > 512 * 1024:
+                        break
+                    metadata_bytes += cost
+                    end += 1
+                group = records[start:end]
+                fetched = collection.get(ids=[row["memory_id"] for row in group],
+                                         include=["documents", "metadatas", "embeddings"])
+                found_ids = fetched["ids"]
+                if (len(found_ids) != len(group) or len(set(found_ids)) != len(found_ids)
+                        or set(found_ids) != {row["memory_id"] for row in group}
+                        or fetched["embeddings"] is None):
+                    raise ValueError("vector page membership differs")
+                positions = {key: index for index, key in enumerate(found_ids)}
+                for wanted in group:
+                    index = positions[wanted["memory_id"]]
+                    text = fetched["documents"][index]
+                    meta = fetched["metadatas"][index]
+                    vector = fetched["embeddings"][index]
+                    if (type(text) is not str or len(text) > 8192
+                            or meta != {"payload_hash": wanted["payload_hash"]}
+                            or len(text.encode("utf-8")) != wanted["text_bytes"]
+                            or hashlib.sha256(text.encode("utf-8")).hexdigest() != wanted["text_hash"]
+                            or not 1 <= len(vector) <= 2048
+                            or not all(math.isfinite(float(value)) for value in vector)):
+                        raise ValueError("vector page source differs")
+                    body = struct.pack("<" + "f" * len(vector), *vector)
+                    if not all(math.isfinite(value) for value in struct.unpack("<" + "f" * len(vector), body)):
+                        raise ValueError("vector page f32 overflow")
+                    result.append({"memory_id": wanted["memory_id"], "dimension": len(vector),
+                                   "f32": base64.b64encode(body).decode("ascii"),
+                                   "sha256": hashlib.sha256(body).hexdigest()})
+                del fetched
+                start = end
+            check_deadline(cursor.binding["deadline_ns"])
+            cursor.advance(ids)
+            return {"ack": cursor.ack(), "rows": result}
+
+    def end_page_read(self, scope: PipelineScope, request: dict) -> dict:
+        from .daily_vector_pages import BINDING_KEYS
+        if set(request) != BINDING_KEYS | {"sequence", "last_key", "count"}:
+            raise ValueError("invalid vector page EOF")
+        with self._lock:
+            active = getattr(self, "_page_read", None)
+            if active is None or active[0] != scope:
+                raise RuntimeError("vector page owner unavailable")
+            active[1].verify(request, eof=True)
+            result = active[1].ack()
+            self._page_read = None
+            return result
 
     async def contains(self, scope: PipelineScope, ids: tuple[str, ...]) -> bool:
         if type(ids) is not tuple or not ids or len(ids) > 100:
@@ -449,6 +543,8 @@ class DailyVectorIndex:
 
         def remove():
             with self._lock:
+                if getattr(self, "_page_read", None) is not None:
+                    raise RuntimeError("vector read session owns partition")
                 collection = self._collection(scope)
                 present = collection.get(ids=list(ids))["ids"]
                 if present:

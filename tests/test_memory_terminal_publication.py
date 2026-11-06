@@ -156,9 +156,11 @@ async def test_terminal_add_fails_fast_without_ack_or_duplicate_raw(tmp_path):
 
     challenge = runtime(tmp_path, service_factory)
     try:
-        for _ in range(2):
-            with pytest.raises(RuntimeError, match="publication unavailable"):
-                await asyncio.wait_for(add(challenge), timeout=1)
+        with pytest.raises(RuntimeError, match="publication unavailable"):
+            await asyncio.wait_for(add(challenge), timeout=1)
+        assert challenge.cached_readiness()["terminal"]
+        with pytest.raises(RuntimeError, match="challenge runtime unavailable"):
+            await asyncio.wait_for(add(challenge), timeout=1)
         raw = factory.services[0].raw
         scope = raw.configured_scopes()[0]
         assert len(await raw.replay(scope, scope.conversation_id)) == 1

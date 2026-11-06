@@ -15,7 +15,16 @@ from typing import Iterator
 _STAGES = frozenset({"finish", "content", "json", "group_shape", "domain_payload",
                      "cache_integrity", "source_budget", "prepare", "published", "retirement", "unknown"})
 _REASONS = _STAGES
+_PUBLICATION_CAUSES = frozenset({"capacity", "derived", "publisher", "reader", "deadline", "ownerunknown"})
 _DOMAINS = frozenset({"vector", "entity", "graph", "rule", "journal", "schedule"})
+_PAYLOAD_FIELDS = {
+    "vector": {"text"}, "entity": {"subject", "attribute", "value"},
+    "graph": {"subject", "relation", "object"}, "rule": {"text", "status"},
+    "journal": {"text", "occurred_at"}, "schedule": {"text", "scheduled_at"},
+}
+_PAYLOAD_TYPES = frozenset({"str", "list", "dict", "int", "float", "bool", "NoneType", "other"})
+_PAYLOAD_VIOLATIONS = frozenset({"payload_shape", "not_string", "empty_text", "text_too_long",
+    "invalid_unicode", "noninstant_timestamp", "rule_promotion"})
 _ERROR_TYPES: dict[type[BaseException], str] = {ValueError: "ValueError", RuntimeError: "RuntimeError", OSError: "OSError",
                 TimeoutError: "TimeoutError", PermissionError: "PermissionError",
                 TypeError: "TypeError", KeyError: "KeyError", IndexError: "IndexError"}
@@ -25,19 +34,43 @@ _PROJECT = Path(__file__).absolute().parent.parent
 _STATIC_FILES = frozenset({"kernel/raw_message_worker.py", "kernel/challenge_diagnostics.py",
     "apps/system_memory_god/grouped_extractor.py", "apps/system_memory_god/derivation.py",
     "apps/system_memory_god/storage/extraction_snapshots.py",
+    "apps/system_memory_god/storage/extraction_call_budget.py",
     "apps/system_memory_god/storage/derived_evidence.py",
     "apps/system_memory_god/challenge_runtime.py", "apps/system_memory_god/challenge_lanes.py",
     "apps/system_memory_god/challenge_admission.py"})
 _ACTIVE: DiagnosticSink | None = None
 
 
+def _closed_payload_issue(issue: object) -> dict | None:
+    """Copy only bounded vocabulary; neither values nor arbitrary key names survive."""
+    if (type(issue) is not dict or set(issue) != {
+            "domain", "index", "field", "type", "violation", "characters"}):
+        return None
+    domain, field = issue["domain"], issue["field"]
+    if (type(domain) is not str or domain not in _PAYLOAD_FIELDS
+            or type(issue["index"]) is not int or not 0 <= issue["index"] < 10
+            or (field is not None and (type(field) is not str or field not in _PAYLOAD_FIELDS[domain]))
+            or type(issue["type"]) is not str or issue["type"] not in _PAYLOAD_TYPES
+            or type(issue["violation"]) is not str or issue["violation"] not in _PAYLOAD_VIOLATIONS
+            or (issue["characters"] is not None and
+                (type(issue["characters"]) is not int or not 0 <= issue["characters"] <= 128000))):
+        return None
+    return dict(issue)
+
+
 class DiagnosticError(ValueError):
     """ValueError-compatible closed classification; never accepts diagnostic text."""
 
-    def __init__(self, reason: str, message: str | None = None, *, finish_reason: object = None):
+    def __init__(self, reason: str, message: str | None = None, *, finish_reason: object = None,
+                 payload_issue: object = None, publication_cause: object = None):
+        if publication_cause is not None and (type(publication_cause) is not str
+                or publication_cause not in _PUBLICATION_CAUSES):
+            raise ValueError("invalid closed publication cause")
         self.safe_reason = reason if type(reason) is str and reason in _REASONS else "unknown"
         self.safe_finish_reason = (finish_reason if type(finish_reason) is str and finish_reason in _FINISH_REASONS
                                    else "unknown")
+        self.safe_payload_issue = _closed_payload_issue(payload_issue)
+        self.safe_publication_cause = publication_cause
         # Existing static validation messages remain useful to ordinary callers.
         # Only closed reason and finish fields are eligible for diagnostics.
         super().__init__(message if message is not None else self.safe_reason)
@@ -59,7 +92,7 @@ def _encode_record(stage: object, error: BaseException, domain: object, attempt:
             frames.append({"file": relative, "line": trace.tb_lineno})
             frames = frames[-8:]
         trace = trace.tb_next
-    record = {"utc": datetime.now(timezone.utc).isoformat(),
+    record: dict[str, object] = {"utc": datetime.now(timezone.utc).isoformat(),
         "stage": stage if type(stage) is str and stage in _STAGES else "unknown",
         "reason": reason if type(reason) is str and reason in _REASONS else "unknown",
         "error_type": "DiagnosticError" if type(error) is DiagnosticError else _ERROR_TYPES.get(type(error), "other"),
@@ -69,6 +102,14 @@ def _encode_record(stage: object, error: BaseException, domain: object, attempt:
     if type(error) is DiagnosticError and error.safe_reason == "finish":
         finish = error.safe_finish_reason
         record["finish_reason"] = finish if type(finish) is str and finish in _FINISH_REASONS else "unknown"
+    if type(error) is DiagnosticError and error.safe_reason == "domain_payload":
+        issue = _closed_payload_issue(error.safe_payload_issue)
+        if issue is not None:
+            record["payload_issue"] = issue
+    if type(error) is DiagnosticError:
+        cause = error.safe_publication_cause
+        if type(cause) is str and cause in _PUBLICATION_CAUSES:
+            record["publication_cause"] = cause
     return (json.dumps(record, separators=(",", ":"), ensure_ascii=True) + "\n").encode("ascii")
 
 

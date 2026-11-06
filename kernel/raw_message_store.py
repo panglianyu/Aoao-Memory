@@ -7,7 +7,7 @@ dispatch them off their event loop. Each call owns a short-lived connection.
 
 from __future__ import annotations
 
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, nullcontext
 from collections.abc import Mapping
 from datetime import datetime
 import hashlib
@@ -16,7 +16,7 @@ import math
 from pathlib import Path
 import sqlite3
 import time
-from typing import Generator, Iterator, cast
+from typing import Callable, Generator, Iterator, cast
 from dataclasses import asdict, dataclass, replace
 
 from kernel.raw_message_models import (
@@ -580,8 +580,10 @@ class RawMessageStore:
         self.database = self._database.path
 
     def _db(self, *, write: bool = False,
-            deadline: float | None = None) -> AbstractContextManager[sqlite3.Connection]:
-        return self._database.connection(write=write, deadline=deadline)
+            deadline: float | None = None,
+            _on_connection: Callable[[sqlite3.Connection], None] | None = None
+            ) -> AbstractContextManager[sqlite3.Connection]:
+        return self._database.connection(write=write, deadline=deadline, _on_connection=_on_connection)
 
     def register_connector(
         self,
@@ -1328,6 +1330,44 @@ class RawMessageStore:
         with self._db(write=True) as db:
             recover_failed_rows(db, rows, manifest_digest)
 
+    def group_budget_origin(self, scope: Scope, task_id: str, lease_token: str) -> str:
+        """Prove an untouched five-domain source, never infer old calls as zero."""
+        _scope(scope)
+        _id(task_id)
+        _id(lease_token)
+        if scope.connector_id is None or scope.conversation_id is None:
+            raise ScopeError("complete grouped budget scope required")
+        now = time.time()
+        domains = {"entity", "graph", "journal", "rule", "schedule"}
+        with self._db() as db:
+            db.execute("BEGIN")
+            current = _outbox._leased(db, scope, task_id, lease_token, now)
+            if current["target_domain"] not in domains:
+                return "legacy_unknown"
+            rows = db.execute(
+                "SELECT * FROM derivation_outbox WHERE message_id=? AND revision=? "
+                "AND processor=? AND processor_version=? AND model=? AND prompt_hash=? "
+                "AND target_domain IN ('entity','graph','journal','rule','schedule')",
+                tuple(current[key] for key in (
+                    "message_id", "revision", "processor", "processor_version", "model", "prompt_hash")),
+            ).fetchall()
+            if len(rows) != 5 or {row["target_domain"] for row in rows} != domains:
+                return "legacy_unknown"
+            for row in rows:
+                pending = row["status"] == "pending" and row["attempts"] == 0
+                first_lease = (row["status"] == "leased" and row["attempts"] == 1
+                               and row["lease_owner"] == current["lease_owner"]
+                               and row["lease_until"] is not None and row["lease_until"] > now)
+                if not (pending or first_lease) or row["last_error_code"] is not None:
+                    return "legacy_unknown"
+                events = dict(db.execute(
+                    "SELECT action,COUNT(*) FROM derivation_events WHERE task_id=? GROUP BY action",
+                    (row["task_id"],)))
+                expected = {"created": 1, "claimed": 1} if first_lease else {"created": 1}
+                if events != expected:
+                    return "legacy_unknown"
+            return "fresh"
+
     def renew(self, scope: Scope, task_id: str, lease_token: str, *,
               now: float | None = None, lease_seconds: int = 60) -> dict:
         with self._db(write=True) as db:
@@ -1413,12 +1453,12 @@ class RawMessageStore:
         """All current source revisions in this conversation finished derivation."""
         return self.partition_state(scope)[1]
 
-    def partition_state(self, scope: Scope) -> tuple[int, bool]:
+    def partition_state(self, scope: Scope, *, deadline: float | None = None) -> tuple[int, bool]:
         """Read the committed Raw generation and completion state atomically."""
         _scope(scope)
         if scope.connector_id is None or scope.conversation_id is None:
             raise ScopeError("complete conversation scope required")
-        with self._db() as db:
+        with self._db(deadline=deadline) as db:
             return query_raw_partition_state(db, scope)
 
     def partition_publication_state(self, scope: Scope) -> tuple[int, bool, bool]:
@@ -1506,6 +1546,54 @@ class RawMessageStore:
                         "status": row[8], "anchors": anchors})
                 after = rows[-1][0]
                 yield tuple(page)
+
+    def vector_anchor_pages(self, scope: Scope, *, generation: int, deadline_ns: int,
+                            page_size: int = 100, _connection: sqlite3.Connection | None = None
+                            ) -> Generator[tuple[dict, ...], None, None]:
+        """One owner-thread transaction; unique current vector anchors, no total cap."""
+        _scope(scope)
+        if (scope.connector_id is None or scope.conversation_id is None
+                or type(generation) is not int or generation < 0
+                or type(deadline_ns) is not int or deadline_ns <= time.monotonic_ns()
+                or type(page_size) is not int or not 1 <= page_size <= 100):
+            raise ScopeError("invalid bounded vector page scope")
+        # Page owners keep the actual connection, not only this generator, so a
+        # failed context exit remains retryable after the generator has closed.
+        context = (self._db(deadline=deadline_ns / 1e9) if _connection is None
+                   else nullcontext(_connection))
+        with context as db:
+            db.set_progress_handler(lambda: int(time.monotonic_ns() >= deadline_ns), 1000)
+            db.execute("PRAGMA cache_size=-128")
+            db.execute("PRAGMA temp_store=FILE")
+            db.execute("BEGIN")
+            if query_raw_partition_state(db, scope) != (generation, True):
+                raise ConflictError("vector page source changed")
+            after = ""
+            cursor = db.execute(
+                "SELECT r.memory_id,r.store_ref,d.message_id,d.revision,d.task_id,"
+                "d.processor,d.processor_version,d.model,d.prompt_hash,COUNT(*) "
+                "FROM derivation_results r JOIN derivation_outbox d USING(task_id) "
+                "JOIN raw_messages m USING(message_id) "
+                "WHERE m.user_id=? AND m.agent_id=? AND m.connector_id=? AND m.conversation_id=? "
+                "AND m.status IN ('active','edited') AND d.revision=m.revision "
+                "AND d.target_domain='vector' AND d.status='succeeded' AND r.status='active' AND r.memory_id>? "
+                "GROUP BY r.memory_id ORDER BY r.memory_id",
+                (scope.user_id, scope.agent_id, scope.connector_id, scope.conversation_id, after),
+            )
+            while True:
+                if time.monotonic_ns() >= deadline_ns:
+                    raise TimeoutError("vector page deadline exceeded")
+                # Keep one ordered cursor in the same read transaction instead
+                # of re-scanning/grouping the whole corpus for every page.
+                rows = cursor.fetchmany(page_size)
+                if not rows:
+                    return
+                if any(row[9] != 1 for row in rows) or rows[0][0] <= after:
+                    raise ConflictError("vector page anchor is not unique")
+                page = tuple({"memory_id": row[0], "store_ref": row[1],
+                              "source": SourceRevision(*row[2:9])} for row in rows)
+                after = rows[-1][0]
+                yield page
 
     def sources_for_memory(
         self, scope: Scope, memory_id: str, *, include_inactive: bool = False

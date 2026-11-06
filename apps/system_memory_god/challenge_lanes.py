@@ -35,8 +35,35 @@ class ChallengeLanes:
             embedding_owner=embedding_owner, add_timeout=add_timeout,
             service_factory=service_factory, store=store,
             cache_observer=partial(self._cache_event, lane),
-            observer=partial(self._phase, lane), failure_observer=self._fail_closed)
+            observer=partial(self._phase, lane), failure_observer=partial(self._lane_failure, lane))
             for lane in range(self.lane_count))
+
+    def _lane_failure(self, lane_id: int) -> None:
+        if self._failed:
+            return
+        shared_failed = bool(getattr(self._embedding_owner, "_local_failed", False))
+        ensure_available = getattr(self._embedding_owner, "_ensure_available", None)
+        if ensure_available is not None:
+            try:
+                ensure_available()
+            except Exception:
+                # A known dead/closed shared process affects every lane. This
+                # direct ownership check does not depend on a busy stats lock.
+                shared_failed = True
+        try:
+            stats = self._embedding_owner.stats
+            shared_failed |= (stats.get("stats_available", True) is True
+                              and stats.get("failed") is True)
+        except Exception:
+            # An unavailable instantaneous stats sample does not prove that
+            # another lane's shared process failed. Health remains conservative.
+            shared_failed |= bool(getattr(self._embedding_owner, "_local_failed", False))
+        if shared_failed:
+            self._fail_closed()
+        elif self._admission is not None:
+            quarantine = getattr(self._admission, "quarantine_lane", None)
+            if quarantine is not None:
+                quarantine(lane_id, RuntimeError("challenge local lifecycle unavailable"))
 
     def _fail_closed(self) -> None:
         if self._failed:

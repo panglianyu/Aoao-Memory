@@ -781,7 +781,8 @@ async def test_real_snapshot_capacity_fault_remains_fenced(tmp_path, monkeypatch
         assert time.monotonic() < seed_deadline
         assert cached_ids == candidate_ids == expected
         # Lower the actual validator limit; all input rows are real receipts.
-        monkeypatch.setattr(snapshot_module, "MAX_ROWS", 1)
+        # One synthetic16D vector fits; the second actual body exceeds this byte gate.
+        monkeypatch.setattr(snapshot_module, "MAX_BODY", 16 * 4)
         _, later_id = await ingress(raw, bus, "虚构容量第二条仍须保存")
         deadline = time.monotonic() + 20
         while runtime.health()["semantic_reason"] != "vector_capacity_exceeded" and time.monotonic() < deadline:

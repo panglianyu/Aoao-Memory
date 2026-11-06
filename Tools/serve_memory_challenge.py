@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-ENTRY_VERSION = "SNAP-CAP-1"
+ENTRY_VERSION = "ARU-RECOVERY-2"
 _STORAGE_MARKER_VERSION = "AMC-ENTRY-1.0"
 _MARKER = ".amc-entry-v1"
 _LEASE_FILE = ".amc-entry.lock"

@@ -162,6 +162,11 @@ class RawMessageWorker:
         async def guard():
             await self._raw_io(self.store.renew, *args, lease_seconds=self.lease_seconds)
 
+        async def budget_origin():
+            return await self._raw_io(self.store.group_budget_origin, *args)
+
+        setattr(guard, "budget_origin", budget_origin)
+
         async def execute():
             await guard()
             message = await asyncio.to_thread(self.store.get, scope, task["message_id"])

@@ -416,7 +416,7 @@ async def test_late_owner_failure_has_fresh_cleanup_clock_after_add_plus_sixty(t
 
 
 @pytest.mark.asyncio
-async def test_cleanup_timeout_immediately_closes_both_admission_lanes(tmp_path, monkeypatch):
+async def test_cleanup_timeout_quarantines_only_its_owned_admission_lane(tmp_path, monkeypatch):
     monkeypatch.setattr("system_memory_god.challenge_runtime.CLEANUP_TIMEOUT", .03)
     factory = Factory()
     host = ChallengeLanes(tmp_path, client=object(), model="test-model",
@@ -444,12 +444,17 @@ async def test_cleanup_timeout_immediately_closes_both_admission_lanes(tmp_path,
         with pytest.raises(RuntimeError, match="durable write"):
             await admission.submit(first, failed, affinity_key="alice")
         await asyncio.sleep(.06)
-        assert admission.closing and host.health()["state"] == "unavailable"
+        assert not admission.closing and host.health()["state"] == "unavailable"
         assert admission.in_flight == 1 and host.for_lane(0)._cleanup_tasks
+        assert admission._lane_failures[0] is not None and admission._lane_failures[1] is None
+        retry = admission.reserve(time.monotonic() + 5)
         with pytest.raises(AdmissionClosed):
-            admission.reserve(time.monotonic() + 5)
-        with pytest.raises(RuntimeError, match="unavailable"):
-            await add(host.for_lane(1), user="bob")
+            await admission.submit(retry, lambda lane: add(host.for_lane(lane)), affinity_key="alice")
+        next_ticket = admission.reserve(time.monotonic() + 5)
+        result = await admission.submit(next_ticket,
+            lambda lane: add(host.for_lane(lane), user="bob"), affinity_key="bob")
+        assert result["success"] and not host.for_lane(1)._blocked
+        assert admission.in_flight == 1 and host.for_lane(0)._cleanup_tasks
     finally:
         release.set()
         with pytest.raises(RuntimeError):

@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 import sqlite3
+import time
+from typing import Callable
 
 from kernel.memory_pipeline_models import PipelineScope
 from .pipeline_database import PipelineDatabase
@@ -22,19 +24,31 @@ class DailyDerivationGate:
         return (type(scope) is PipelineScope and self._database.scope == scope
                 and self._connection is not None and self._connection.in_transaction)
 
-    def _acquire(self) -> sqlite3.Connection:
+    def _acquire(self, *, deadline: float | None = None,
+                 _on_connection: Callable[[sqlite3.Connection], None] | None = None) -> sqlite3.Connection:
         database = self._database
         connection = None
         try:
             database._path_check()
             database.path.parent.mkdir(parents=True, exist_ok=True)
             database._path_check()
-            connection = sqlite3.connect(database.path, timeout=5, isolation_level=None,
+            remaining = 5 if deadline is None else min(5, deadline - time.monotonic())
+            if remaining <= 0:
+                raise TimeoutError("derivation gate deadline exceeded")
+            connection = sqlite3.connect(database.path, timeout=remaining, isolation_level=None,
                                          check_same_thread=False)
+            if _on_connection is not None:
+                _on_connection(connection)
+            if deadline is not None:
+                connection.set_progress_handler(lambda: int(time.monotonic() >= deadline), 1000)
             connection.execute("PRAGMA foreign_keys=ON")
             connection.execute("PRAGMA synchronous=FULL")
             connection.execute("BEGIN IMMEDIATE")
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError("derivation gate deadline exceeded")
             database._recognize(connection)
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError("derivation gate deadline exceeded")
             return connection
         except BaseException:
             if connection is not None:

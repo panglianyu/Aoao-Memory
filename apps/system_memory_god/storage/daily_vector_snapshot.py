@@ -31,6 +31,10 @@ class SnapshotCapacityError(ValueError):
     """Do not silently truncate the searchable corpus when capacity is reached."""
 
 
+class SnapshotLeasePressure(SnapshotCapacityError):
+    """An old, genuinely leased generation must retire before publication."""
+
+
 def snapshot_capacity(body_bytes: int, directory_bytes: int | None = None) -> None:
     """Check whole-generation byte budgets before allocating its full bodies."""
     if (type(body_bytes) is not int or body_bytes < 0
@@ -220,6 +224,7 @@ class DailyVectorSnapshot:
         self._generations: dict[tuple[PipelineScope, str], int] = {}
         self._leases: dict[str, SnapshotLease] = {}
         self._pending_releases: dict[str, SnapshotLease] = {}
+        self.on_lease_released: Callable[[PipelineScope], None] | None = None
         self._lock = threading.RLock()
         self._closed = False
         self._disposed = False
@@ -267,8 +272,9 @@ class DailyVectorSnapshot:
             if self._current.get(scope) == generation:
                 load_snapshot(self.root, scope, generation, embedding=self.embedding, binding_sha256=self.binding_sha256)
                 return generation
-            if (sum(self._generations.values()) + len(body) + len(ids_body) + len(manifest_body) > MAX_TOTAL
-                    or sum(key[0] == scope for key in self._generations) >= 2):
+            if sum(key[0] == scope for key in self._generations) >= 2:
+                raise SnapshotLeasePressure("snapshot_lease_pressure")
+            if sum(self._generations.values()) + len(body) + len(ids_body) + len(manifest_body) > MAX_TOTAL:
                 raise SnapshotCapacityError("vector_capacity_exceeded")
             parent = self.root / scope.partition_id
             _directory(parent)
@@ -328,6 +334,12 @@ class DailyVectorSnapshot:
             self._pending_releases[lease.token] = lease
             self._collect()
             del self._pending_releases[lease.token]
+            if self.on_lease_released is not None:
+                self.on_lease_released(lease.scope)
+
+    def lease_pressure(self, scope: PipelineScope) -> bool:
+        with self._lock:
+            return sum(key[0] == scope for key in self._generations) >= 2
 
     def _collect(self) -> None:
         occupied = {(lease.scope, lease.generation) for lease in self._leases.values()}

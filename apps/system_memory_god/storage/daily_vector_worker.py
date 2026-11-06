@@ -71,9 +71,20 @@ def _synthetic_stall(texts: list[str]) -> list[list[float]]:
     return _synthetic_embed(texts)
 
 
+def _synthetic_embed_1024(texts: list[str]) -> list[list[float]]:
+    """Explicit offline fixture boundary; production BGE selection is unchanged."""
+    return [row * 64 for row in _synthetic_embed(texts)]
+
+
 def _execute(index: DailyVectorIndex, request: dict) -> object:
     scope = PipelineScope(*request["scope"])
     operation = request["op"]
+    if operation == "page_read_begin":
+        return index.begin_page_read(scope, request["page"])
+    if operation == "page_read":
+        return index.read_numeric_page(scope, request["page"])
+    if operation == "page_read_end":
+        return index.end_page_read(scope, request["page"])
     if operation == "warm_existing":
         asyncio.run(index.warm_existing(scope))
         return True
@@ -106,7 +117,10 @@ def _validate_request(request: object) -> dict:
     PipelineScope(*request["scope"])
     operation = request.get("op")
     shared = {"version", "id", "scope", "op"}
-    if operation == "warm_existing":
+    if operation in {"page_read_begin", "page_read", "page_read_end"}:
+        if set(request) != shared | {"page"} or type(request["page"]) is not dict:
+            raise ValueError("invalid vector page request")
+    elif operation == "warm_existing":
         if set(request) != shared:
             raise ValueError("invalid vector warm request")
     elif operation in {"put", "receipts", "put_snapshot", "receipts_snapshot"}:
@@ -186,7 +200,7 @@ def serve(connection: Connection, root_text: str, embedding: str, *, formal_embe
         if embedding != "bge-m3":
             raise ValueError("formal binding requires bge-m3")
         formal_embedding = FormalEmbeddingBinding.from_payload(formal_embedding)
-    if embedding not in {"bge-m3", "synthetic", "synthetic-stall", "synthetic-drop-ack",
+    if embedding not in {"bge-m3", "synthetic", "synthetic-1024", "synthetic-stall", "synthetic-drop-ack",
                          "synthetic-wrong-id", "synthetic-bad-ready"}:
         raise ValueError("unsupported vector embedding")
     stores = ScopedStores(Path(root_text))
@@ -217,7 +231,8 @@ def serve(connection: Connection, root_text: str, embedding: str, *, formal_embe
                 embedding_client.close()
             return
     else:
-        embed = _synthetic_stall if embedding == "synthetic-stall" else _synthetic_embed
+        embed = (_synthetic_stall if embedding == "synthetic-stall" else
+                 _synthetic_embed_1024 if embedding == "synthetic-1024" else _synthetic_embed)
     try:
         index = DailyVectorIndex(stores, embed)
         if embedding == "synthetic-bad-ready":

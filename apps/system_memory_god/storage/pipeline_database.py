@@ -11,6 +11,7 @@ import os
 import re
 import sqlite3
 import stat
+import time
 from typing import Callable, Iterator
 
 from kernel.memory_pipeline_models import PipelineScope, canonical
@@ -94,7 +95,8 @@ class PipelineDatabase:
         if not isinstance(root, Path) or not root.is_absolute() or type(scope) is not PipelineScope:
             raise ValueError("explicit scoped database required")
         if filename not in {"source_ledger.db", "derivation_runs.db", "derived_evidence.db",
-                            "vector_index.db", "derivation_gate.db", "extraction_snapshots.db"}:
+                            "vector_index.db", "derivation_gate.db", "extraction_snapshots.db",
+                            "extraction_call_budget.db"}:
             raise ValueError("invalid pipeline database")
         if type(version) is not int or not 1 <= version <= 2**31 - 1:
             raise ValueError("invalid pipeline schema version")
@@ -136,20 +138,37 @@ class PipelineDatabase:
         return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns
 
     @contextmanager
-    def readonly_snapshot(self) -> Iterator[sqlite3.Connection]:
+    def readonly_snapshot(self, *, deadline: float | None = None,
+                          _on_connection: Callable[[sqlite3.Connection], None] | None = None
+                          ) -> Iterator[sqlite3.Connection]:
         """Recognize and scan one existing file without creating or upgrading it."""
         db = None
         try:
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError("pipeline read deadline exceeded")
             before = self._readonly_identity()
+            remaining = 5.0 if deadline is None else min(5.0, deadline - time.monotonic())
+            if remaining <= 0:
+                raise TimeoutError("pipeline read deadline exceeded")
             db = sqlite3.connect(self.path.as_uri() + "?mode=ro&immutable=1",
-                                 uri=True, timeout=5, isolation_level=None)
+                                 uri=True, timeout=remaining, isolation_level=None)
+            if _on_connection is not None:
+                _on_connection(db)
+            if deadline is not None:
+                db.set_progress_handler(lambda: int(time.monotonic() >= deadline), 1000)
             db.execute("PRAGMA query_only=ON")
             db.execute("BEGIN")
             self._recognize(db, allow_initialize=False)
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError("pipeline read deadline exceeded")
             yield db
             if self._readonly_identity() != before:
                 raise ValueError("pipeline storage changed during inventory")
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError("pipeline read deadline exceeded")
         except (sqlite3.Error, OSError):
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError("pipeline read deadline exceeded") from None
             raise ValueError("pipeline storage unavailable") from None
         finally:
             if db is not None:

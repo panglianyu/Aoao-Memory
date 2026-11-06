@@ -93,7 +93,7 @@ def fake_validator(root, relative, scope, *, authority):
 
 @pytest.fixture
 def fixture():
-    temporary = tempfile.TemporaryDirectory(prefix="cb-", dir="G:/amc26")
+    temporary = tempfile.TemporaryDirectory(prefix="c-", dir=tempfile.gettempdir())
     root = Path(temporary.name)
     original = root / "original"
     original.mkdir()

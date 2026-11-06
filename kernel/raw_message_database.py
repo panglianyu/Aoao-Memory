@@ -10,7 +10,7 @@ import shutil
 import sqlite3
 import hashlib
 import time
-from typing import Iterator
+from typing import Callable, Iterator
 
 from kernel.raw_message_models import RawMessageError
 from kernel.raw_message_schema import (
@@ -240,13 +240,17 @@ class _RawDatabase:
 
     @contextmanager
     def connection(self, *, write: bool = False,
-                   deadline: float | None = None) -> Iterator[sqlite3.Connection]:
+                   deadline: float | None = None,
+                   _on_connection: Callable[[sqlite3.Connection], None] | None = None
+                   ) -> Iterator[sqlite3.Connection]:
         remaining = _remaining_publication_budget(deadline) if deadline is not None else 10.0
         database = str(self.path) if write else self.path.as_uri() + "?mode=ro"
         db = sqlite3.connect(database, timeout=min(10.0, remaining),
                              isolation_level=None, uri=not write)
         db.row_factory = sqlite3.Row
         try:
+            if _on_connection is not None:
+                _on_connection(db)
             if deadline is not None:
                 db.execute(f"PRAGMA busy_timeout={max(1, int(_remaining_publication_budget(deadline) * 1000))}")
                 db.set_progress_handler(

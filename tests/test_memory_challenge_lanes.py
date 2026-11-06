@@ -8,7 +8,7 @@ import pytest
 
 from system_memory_god.challenge_api import create_app
 from system_memory_god.challenge_lanes import ChallengeLanes
-from tests.test_memory_challenge_runtime import FakeFactory, FakeService
+from tests.test_memory_challenge_runtime import FakeDeadlineRuntime, FakeFactory, FakeService
 
 
 class Generation:
@@ -41,7 +41,7 @@ class ParallelService(FakeService):
 class Factory(FakeFactory):
     def __call__(self, profile, **options):
         result = ParallelService(profile, self)
-        result.runtime = SimpleNamespace(set_embedding_deadline=lambda _: None)
+        result.runtime = FakeDeadlineRuntime()
         self.services.append(result)
         return result
 
@@ -255,7 +255,7 @@ async def test_http_full_sixteen_user_add_then_search_retiring_both_cached_users
     class SwitchingFactory(Factory):
         def __call__(self, profile, **options):
             result = SwitchingService(profile, self)
-            result.runtime = SimpleNamespace(set_embedding_deadline=lambda _: None)
+            result.runtime = FakeDeadlineRuntime()
             self.services.append(result)
             return result
 

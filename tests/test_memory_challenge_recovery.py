@@ -51,7 +51,7 @@ def test_frozen_readonly_sees_committed_wal_without_changing_db_wal_or_shm(tmp_p
 @pytest.fixture
 def frozen(tmp_path, monkeypatch):
     monkeypatch.setattr(recovery, "_CALL_BUDGET_CLAIMED", False)
-    short = tempfile.TemporaryDirectory(prefix="rc-", dir="G:/amc26")
+    short = tempfile.TemporaryDirectory(prefix="r-", dir=tempfile.gettempdir())
     root = Path(short.name)
     (root / ".amc-recovery-clone").write_bytes(b"AMC-RECOVERY-CLONE-1\n")
     journal = ChallengeStore(root, model="synthetic-model")

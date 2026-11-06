@@ -73,3 +73,9 @@ class ScopedStores:
 
         self.partition(scope)
         return ExtractionSnapshots(self.root, scope)
+
+    def call_budgets(self, scope: PipelineScope):
+        from .extraction_call_budget import ExtractionCallBudget
+
+        self.partition(scope)
+        return ExtractionCallBudget(self.root, scope)

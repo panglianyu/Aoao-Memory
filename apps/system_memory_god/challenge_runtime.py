@@ -13,7 +13,7 @@ from pathlib import Path
 import time
 from typing import Any, Callable, TYPE_CHECKING
 
-from kernel.challenge_diagnostics import emit_failure
+from kernel.challenge_diagnostics import DiagnosticError, emit_failure
 from kernel.daily_memory_contracts import MAX_MEMORY_QUERY_CHARS, memory_retrieval_hints
 from kernel.memory_pipeline_models import identity
 from kernel.raw_message_models import ConflictError, MessageDraft
@@ -22,14 +22,24 @@ from kernel.raw_message_service import stable_id
 from .challenge_store import ChallengeStore, UserBinding, canonical_received_utc, ordinary_directory
 from .grouped_extractor import memory_specs
 from .memory_factory import create_memory_service
+from .storage.shared_embedding_owner import DeadlineHandoffNotCommitted
 
 if TYPE_CHECKING:
     from .storage.shared_embedding_owner import SharedEmbeddingGeneration, SharedEmbeddingOwner
 
-VERSION = "AMC-ENTRY-1.6"
+VERSION = "ARU-RECOVERY-2"
 MAX_MESSAGES = 256
 MAX_MESSAGE_CHARS = 81920
 CLEANUP_TIMEOUT = 60.0
+PUBLICATION_CAUSES = frozenset({"capacity", "derived", "publisher", "reader", "deadline", "ownerunknown"})
+
+
+class PublicationUnavailableError(RuntimeError):
+    """A closed publication cause, never a model message or user identity."""
+
+    def __init__(self, cause: str):
+        self.cause_code = cause if type(cause) is str and cause in PUBLICATION_CAUSES else "ownerunknown"
+        super().__init__("challenge publication unavailable")
 
 
 def _external_id(value: object) -> str:
@@ -99,6 +109,7 @@ class ChallengeRuntime:
         self._service = None
         self._binding: UserBinding | None = None
         self._blocked = False
+        self._terminal_cause: str | None = None
         self._closing = False
         self._closed = False
         self._close_task: asyncio.Task | None = None
@@ -107,7 +118,7 @@ class ChallengeRuntime:
     def diagnostic(self) -> dict:
         """Internal finite diagnostics; never exception text, user IDs or data."""
         failures = deepcopy(self._failures)
-        return {"state": self.health()["state"],
+        return {"state": self.health()["state"], "readiness": self.cached_readiness(),
                 "failure": failures[0] if failures else None, "failures": failures}
 
     def _record_failure(self, stage: str, error: BaseException) -> None:
@@ -146,6 +157,10 @@ class ChallengeRuntime:
             chain.append(cause)
             current = current.__cause__ or current.__context__
         entry = {"stage": stage, "error_type": chain[0]["error_type"], "chain": chain}
+        if type(error) is PublicationUnavailableError:
+            entry["cause"] = error.cause_code
+        elif isinstance(error, (TimeoutError, asyncio.TimeoutError)):
+            entry["cause"] = "deadline"
         if len(self._failures) < 8:
             self._failures.append(entry)
         diagnostic_stage = ("retirement" if stage in {
@@ -154,7 +169,11 @@ class ChallengeRuntime:
             "published" if stage == "published" else
             "unknown" if stage == "search" else "prepare")
         try:
-            emit_failure(diagnostic_stage, error)
+            evidence = error
+            if "cause" in entry:
+                evidence = DiagnosticError("unknown", publication_cause=entry["cause"])
+                evidence = evidence.with_traceback(error.__traceback__)
+            emit_failure(diagnostic_stage, evidence)
         except Exception:
             pass  # Optional evidence cannot replace the business failure or its owner.
 
@@ -169,9 +188,38 @@ class ChallengeRuntime:
     def health(self) -> dict:
         state = ("stopped" if self._closed else "unavailable" if self._blocked
                  else "closing" if self._closing else "ready")
+        if state == "ready" and self.cached_readiness()["terminal"]:
+            state = "unavailable"
         return {"state": state, "version": VERSION}
 
+    def cached_readiness(self) -> dict:
+        """Inspect bounded RAM state only; never ask storage for freshness here."""
+        if self._terminal_cause is not None:
+            return {"terminal": True, "reason": self._terminal_cause}
+        if self._blocked:
+            return {"terminal": True, "reason": "ownerunknown"}
+        backend = getattr(self._service, "runtime", None)
+        observe = getattr(backend, "cached_readiness", None)
+        if observe is None:
+            # Host-independent fake services and an unbound fresh runtime have
+            # no component cache. Production DailyMemoryRuntime supplies it.
+            return {"terminal": False, "reason": "none"}
+        try:
+            value = observe()
+        except Exception:
+            return {"terminal": True, "reason": "ownerunknown"}
+        if (type(value) is not dict or type(value.get("terminal")) is not bool
+                or type(value.get("reason")) is not str
+                or value.get("reason") not in PUBLICATION_CAUSES | {"none"}):
+            return {"terminal": True, "reason": "ownerunknown"}
+        return {"terminal": value["terminal"], "reason": value["reason"]}
+
     def _available(self) -> None:
+        readiness = self.cached_readiness()
+        if readiness["terminal"] and not self._blocked:
+            self._terminal_cause = (readiness["reason"] if readiness["reason"] in PUBLICATION_CAUSES
+                                    else "ownerunknown")
+            self._block()
         if self._blocked or self._closing or self._closed:
             raise RuntimeError("challenge runtime unavailable")
 
@@ -288,7 +336,7 @@ class ChallengeRuntime:
             self._remaining(deadline)
             yield
         except BaseException as error:
-            if (not isinstance(error, ConflictError) and self._owns_cache
+            if (not isinstance(error, (ConflictError, DeadlineHandoffNotCommitted)) and self._owns_cache
                     and not self._blocked):
                 # Transfer this exact lease to cleanup before publishing the
                 # request failure. Direct callers and admission see no idle gap.
@@ -347,8 +395,15 @@ class ChallengeRuntime:
             if self._embedding_generation is not None:
                 deadline_ns = int(deadline * 1_000_000_000)
                 try:
-                    await self._embedding_generation.set_deadline(deadline_ns)
-                    self._service.runtime.set_embedding_deadline(deadline_ns)
+                    await self._service.runtime.handoff_embedding_deadline(
+                        self._embedding_generation, deadline_ns)
+                except DeadlineHandoffNotCommitted as error:
+                    self._record_failure("bind_deadline", error)
+                    raise
+                except asyncio.CancelledError:
+                    # The generation handoff owner has settled before exposing
+                    # cancellation. The request owner retains normal cleanup.
+                    raise
                 except BaseException as error:
                     self._record_failure("bind_deadline", error)
                     self._block()
@@ -377,7 +432,7 @@ class ChallengeRuntime:
             stage = "factory"
             with self._phase("factory", binding.user_id):
                 service = await asyncio.to_thread(self._factory, profile, mode="memory-full-v1",
-                    embedding="bge-m3", semantic_mode="snapshot", client=self.client, model=self.model,
+                    embedding="bge-m3", semantic_mode="paged_exact", client=self.client, model=self.model,
                     **shared_options)
             self._service, self._binding = service, binding
             self._remaining(deadline)
@@ -445,7 +500,15 @@ class ChallengeRuntime:
                 self._remaining(deadline)
                 if type(state) is dict and state.get("reason") == "publication_deadline":
                     raise TimeoutError("challenge publication deadline exceeded")
-                raise RuntimeError("challenge publication unavailable")
+                reasons = {"vector_capacity_exceeded": "capacity", "derived_unavailable": "derived",
+                           "semantic_publisher_failed": "publisher", "reader_unavailable": "reader"}
+                readiness = self.cached_readiness()
+                reason = state.get("reason") if type(state) is dict else None
+                cause = reasons.get(reason, readiness["reason"]) if type(reason) is str else readiness["reason"]
+                if readiness["terminal"] or type(state) is dict and state.get("terminal") is True:
+                    self._terminal_cause = cause if cause in PUBLICATION_CAUSES else "ownerunknown"
+                    self._block()
+                raise PublicationUnavailableError(cause)
             self._remaining(deadline)
 
     async def add(self, *, user_id: str, session_id: str, request_id: str,

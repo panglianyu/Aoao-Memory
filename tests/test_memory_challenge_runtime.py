@@ -11,6 +11,20 @@ from kernel.raw_message_service import RawMessageService
 from system_memory_god.challenge_runtime import ChallengeRuntime
 
 
+class FakeDeadlineRuntime:
+    """Legacy orchestration fixtures supply the new handoff facade explicitly."""
+
+    def __init__(self, observe=lambda deadline: None):
+        self.observe = observe
+
+    async def handoff_embedding_deadline(self, generation, deadline):
+        await generation.set_deadline(deadline)
+        self.observe(deadline)
+
+    def cached_readiness(self):
+        return {"terminal": False, "reason": "none"}
+
+
 class FakeFactory:
     def __init__(self):
         self.services = []
@@ -23,7 +37,7 @@ class FakeFactory:
     def __call__(self, profile, **options):
         assert options["mode"] == "memory-full-v1"
         assert options["embedding"] == "bge-m3"
-        assert options["semantic_mode"] == "snapshot"
+        assert options["semantic_mode"] == "paged_exact"
         assert profile.derivation_input_chars == 81920
         service = FakeService(profile, self)
         self.services.append(service)
@@ -125,7 +139,7 @@ async def test_shared_embedding_survives_user_switch_and_closes_old_generation(t
     def injected_factory(profile, **options):
         options_seen.append(options)
         service = original_factory(profile, **options)
-        service.runtime = SimpleNamespace(set_embedding_deadline=lambda d: owner.events.append(("D", d)))
+        service.runtime = FakeDeadlineRuntime(lambda d: owner.events.append(("D", d)))
         original_close = service.close
 
         async def close():
@@ -161,7 +175,7 @@ async def test_shared_generation_is_retained_when_user_service_close_fails(tmp_p
 
     def injected_factory(profile, **options):
         service = factory(profile, **options)
-        service.runtime = SimpleNamespace(set_embedding_deadline=lambda _: None)
+        service.runtime = FakeDeadlineRuntime()
         return service
 
     service = ChallengeRuntime(tmp_path, client=object(), model="test-model",
@@ -186,7 +200,7 @@ async def test_shared_deadline_registration_failure_blocks_runtime(tmp_path):
 
     def injected_factory(profile, **options):
         service = factory(profile, **options)
-        service.runtime = SimpleNamespace(set_embedding_deadline=lambda _: None)
+        service.runtime = FakeDeadlineRuntime()
         return service
 
     service = ChallengeRuntime(tmp_path, client=object(), model="test-model",
@@ -331,7 +345,7 @@ async def test_identical_retry_and_restart_reuse_stable_message_and_timestamp(tm
         rows = await factory.services[-1].raw.replay(
             factory.services[-1].scopes[0], factory.services[-1].scopes[0].conversation_id)
         assert rows == [first]
-        assert reopened.health() == {"state": "ready", "version": "AMC-ENTRY-1.6"}
+        assert reopened.health() == {"state": "ready", "version": "ARU-RECOVERY-2"}
     finally:
         await reopened.close()
 
