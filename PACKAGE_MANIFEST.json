@@ -1,7 +1,7 @@
 {
   "project": "aru memory",
   "entry_version": "ARU-RECOVERY-2",
-  "file_count": 291,
+  "file_count": 294,
   "files": [
     {
       "path": ".gitattributes",
@@ -85,13 +85,13 @@
     },
     {
       "path": "README.md",
-      "bytes": 13900,
-      "sha256": "6657d8ef9f552961f31a4b24874db9b10bc1d7a17ce6442b31667284a552f74a"
+      "bytes": 14150,
+      "sha256": "d19be657f1fdce6f0c2ab422d7b9f53ed73ca0a6fa82029efd1fb3319ece18a4"
     },
     {
       "path": "SOURCE_MANIFEST.json",
       "bytes": 35577,
-      "sha256": "a034819d18cb46b9ad53a5ca311dc5b4cc3793f987e3b1ebf6fbddcea8ce9efb"
+      "sha256": "4e8705fc8da7c693ef8ca96c9b9a9796a068a999390f971b243bf156d809e889"
     },
     {
       "path": "THIRD_PARTY_NOTICES.md",
@@ -155,8 +155,8 @@
     },
     {
       "path": "VALIDATION-ARU-RECOVERY-2.md",
-      "bytes": 3563,
-      "sha256": "6a69ed6ee3afece1994157bb070d6c26d037750a59f1126467cb9e97022415fc"
+      "bytes": 6451,
+      "sha256": "e4de100f2819d948487c9da71534e98a8ca01a03a1c798a7126fc0d6acec98db"
     },
     {
       "path": "VALIDATION.md",
@@ -230,8 +230,8 @@
     },
     {
       "path": "apps/system_memory_god/derivation.py",
-      "bytes": 25340,
-      "sha256": "95962d132752fedbb7cce757166db0b085582b5e071b58259d3ce56ab8167745"
+      "bytes": 25605,
+      "sha256": "a0398a8101200de3d430cf92017a4f86e039656747115e649359c1e3c3692b2d"
     },
     {
       "path": "apps/system_memory_god/eval_runner.py",
@@ -300,13 +300,13 @@
     },
     {
       "path": "apps/system_memory_god/storage/daily_vector_index.py",
-      "bytes": 30388,
-      "sha256": "5bb8880ddba8599184f997359236b41d84e548a249959370f9023457d1fe9366"
+      "bytes": 36647,
+      "sha256": "b8e82c2febc810524c1ab92533bff22822fd00c8fac6f66b67e41c9ccaf1a118"
     },
     {
       "path": "apps/system_memory_god/storage/daily_vector_pages.py",
-      "bytes": 20014,
-      "sha256": "0415b87ea691c69c2975903c25014a34a6240244a07de7be16167891da3ddd24"
+      "bytes": 21977,
+      "sha256": "15f518b364c99571f20d5582cabedeac4197e09ed7047abea4447ecda23e4e46"
     },
     {
       "path": "apps/system_memory_god/storage/daily_vector_snapshot.py",
@@ -1179,6 +1179,11 @@
       "sha256": "6aff5c576593efbf5f1886e2b92c56e7fc11c296132ba4fb33aaefd2c0f5391b"
     },
     {
+      "path": "tests/_tokenizer_helper.py",
+      "bytes": 510,
+      "sha256": "fe3d6ed0bf710dffb92bd6e096b4ccf37f2c6e693af2fabe728e32a2141295c4"
+    },
+    {
       "path": "tests/conftest.py",
       "bytes": 841,
       "sha256": "e398d7da5d4400aa268f6f3deb6431584debff655eadb5ec50e92610b2a4fead"
@@ -1209,6 +1214,11 @@
       "sha256": "677212be13f743b184c354c33ae94d5a5eb3a45e8293b7a9f534e6383a116679"
     },
     {
+      "path": "tests/test_full_recovery_cold_batches.py",
+      "bytes": 7680,
+      "sha256": "1283c1fd2f3503d55b9c9a204aee29938e6c84284612c5e6994f5c6b9c84753e"
+    },
+    {
       "path": "tests/test_full_recovery_deadline_transaction.py",
       "bytes": 22356,
       "sha256": "360ee8f966e4eecdd1682d132c0adf9655dc413b174872abe2dea2a4cb956b55"
@@ -1222,6 +1232,11 @@
       "path": "tests/test_full_recovery_integrated.py",
       "bytes": 4138,
       "sha256": "98ee0234cd4f70d833b173f3423cf3361fd4e0f1ca60fe30d09c44aa3aa01ae7"
+    },
+    {
+      "path": "tests/test_full_recovery_page_budget.py",
+      "bytes": 4363,
+      "sha256": "c00762d8a2c3fbc2ef501d0de9edf5d96c3b0c7474d3d84442e43867f31923e0"
     },
     {
       "path": "tests/test_full_recovery_page_faults.py",
@@ -1350,13 +1365,13 @@
     },
     {
       "path": "tests/test_memory_challenge_recovery.py",
-      "bytes": 28550,
-      "sha256": "1c627573a4ac00747c5d45837a8d3f83e01806475bc4ac945e9037b849c0eba0"
+      "bytes": 29178,
+      "sha256": "47006d5f59438acdb6f4d524ff79f8ca74c62c4f2051ee30cb497496e350807f"
     },
     {
       "path": "tests/test_memory_challenge_recovery_r2.py",
-      "bytes": 19835,
-      "sha256": "6fee1c5d591da2a1b682465170bd7db8984f73029904b02c154fe45b4b267e6b"
+      "bytes": 20456,
+      "sha256": "0d7d55d0bbb5b2cd280b6583925400807e9004ae170437fe23a0973ff50318e7"
     },
     {
       "path": "tests/test_memory_challenge_runtime.py",

@@ -429,7 +429,7 @@ def test_marker_and_hardlink_manifest_paths_rejected(frozen, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_selected_recovery_uses_real_prepare_domain_ledger_ack_and_keeps_requests_incomplete(frozen):
+async def test_selected_legacy_recovery_refuses_unknown_budget_and_keeps_history(frozen):
     from system_memory_god.memory_factory import create_memory_service
     from kernel.raw_message_service import RawMessageService
 
@@ -456,20 +456,26 @@ async def test_selected_recovery_uses_real_prepare_domain_ledger_ack_and_keeps_r
     worker = RawMessageWorker(raw.store, service.runtime.bus, (frozen.scope,), selected_claims=selected,
                               selected_sources=sources)
     raw.worker = worker
+    with connection(frozen.profile.database) as db:
+        originals = db.execute("SELECT * FROM raw_messages ORDER BY message_id").fetchall()
+        old_failures = db.execute("SELECT * FROM derivation_events WHERE action='failed' ORDER BY event_id").fetchall()
     try:
-        assert sum([await worker.run_once() for _ in range(20)]) == 18
-        assert client.calls == 3
+        # Existing cached/vector work may finish; unknown historic SDK usage
+        # cannot acquire three fresh calls merely through an old recovery receipt.
+        assert sum([await worker.run_once() for _ in range(20)]) == 3
+        assert client.calls == budget.calls == 0
         with connection(frozen.profile.database) as db:
-            assert db.execute("SELECT count(*) FROM derivation_results").fetchone()[0] == 15
-            assert db.execute("SELECT count(*) FROM derivation_outbox WHERE status='succeeded'").fetchone()[0] == 24
-            assert db.execute("SELECT count(*) FROM derivation_events WHERE action='failed'").fetchone()[0] == 18
+            assert db.execute("SELECT * FROM raw_messages ORDER BY message_id").fetchall() == originals
+            failures = db.execute("SELECT * FROM derivation_events WHERE action='failed' ORDER BY event_id").fetchall()
+            assert failures[:len(old_failures)] == old_failures
+            assert all(db.execute("SELECT attempts FROM derivation_outbox WHERE task_id=?", (key,)).fetchone()[0]
+                       >= attempts for key, attempts in selected.items())
         scope = recovery.scope_of(frozen.manifest["groups"][0]["rows"][0])
-        runs = frozen.stores.runs(scope)
-        assert len(runs.get_many(tuple(selected))) == 18
-        assert {run["state"] for run in runs.get_many(tuple(selected)).values()} == {"ledger_written"}
-        from Tools.recover_memory_challenge_failed import _terminal
-        assert _terminal(frozen.root, frozen.manifest) == {"succeeded": 18, "failed": 0,
-            "additional_attempts": 18, "original_incomplete": 2}
+        with frozen.stores.call_budgets(scope)._db.readonly_snapshot() as db:
+            assert db.execute("SELECT DISTINCT origin FROM extraction_budget_groups").fetchall() == [("legacy_unknown",)]
+            assert db.execute("SELECT COUNT(*) FROM extraction_budget_calls").fetchone()[0] == 0
+        with connection(frozen.root / "challenge.sqlite3") as db:
+            assert db.execute("SELECT COUNT(*) FROM challenge_requests WHERE complete=0").fetchone()[0] == 2
     finally:
         await service.close()
         value.close()

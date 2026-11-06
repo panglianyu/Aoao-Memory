@@ -319,7 +319,7 @@ async def test_publication_abort_exits_promptly_and_close_persists_worker_failur
 
 
 @pytest.mark.asyncio
-async def test_fifteen_normal_derivations_complete_eighteen_without_touching_prior_three(checkpoint):
+async def test_r2_legacy_unknown_refuses_new_calls_and_preserves_prior_successes(checkpoint):
     from system_memory_god.challenge_runtime import ChallengeRuntime
     from system_memory_god.challenge_store import UserBinding
 
@@ -351,13 +351,20 @@ async def test_fifteen_normal_derivations_complete_eighteen_without_touching_pri
             worker = RawMessageWorker(raw.store, service.runtime.bus, raw.configured_scopes(),
                                       selected_claims=claims, selected_sources=sources, on_failure=budget.abort)
             raw.worker = worker
+            with connection(profile.database) as db:
+                originals = db.execute("SELECT * FROM raw_messages ORDER BY message_id").fetchall()
+                old_failures = db.execute("SELECT * FROM derivation_events WHERE action='failed' ORDER BY event_id").fetchall()
             total += sum([await worker.run_once() for _ in range(len(claims) + 1)])
+            with connection(profile.database) as db:
+                assert db.execute("SELECT * FROM raw_messages ORDER BY message_id").fetchall() == originals
+                failures = db.execute("SELECT * FROM derivation_events WHERE action='failed' ORDER BY event_id").fetchall()
+                assert failures[:len(old_failures)] == old_failures
             await service.close()
-        assert total == 15 and client.calls == budget.calls == 3
-        assert checkpoint.manifest["lineage"]["prior_calls"] + budget.calls == 5
-        assert not budget.terminal_event.is_set()
-        assert r2.terminal(checkpoint.root, checkpoint.manifest) == {
-            "succeeded": 18, "failed": 0, "additional_attempts": 15, "original_incomplete": 2}
+        assert total == client.calls == budget.calls == 0
+        assert checkpoint.manifest["lineage"]["prior_calls"] == 2
+        assert budget.terminal_event.is_set()
+        with connection(checkpoint.root / "challenge.sqlite3") as db:
+            assert db.execute("SELECT COUNT(*) FROM challenge_requests WHERE complete=0").fetchone()[0] == 2
         for item in checkpoint.manifest["retained"]:
             with connection(checkpoint.root / item["database"]) as db:
                 assert db.execute("SELECT status,attempts FROM derivation_outbox WHERE task_id=?",

@@ -69,8 +69,8 @@ def hash_text(value) -> None:
         raise ValueError("invalid page hash")
 
 
-def metadata_size(*values) -> int:
-    """Account the complete bounded proof graph, deduplicating shared objects."""
+def _metadata_bytes(*values) -> int:
+    """Size one graph without retaining object IDs across transient lifetimes."""
     seen = set()
     def size(value):
         marker = id(value)
@@ -83,11 +83,20 @@ def metadata_size(*values) -> int:
         if isinstance(value, (tuple, list, set)):
             return total + sum(size(item) for item in value)
         if is_dataclass(value):
-            return total + sum(size(getattr(value, field.name)) for field in fields(value))
+            # Include the instance dictionary itself, not only field values.
+            names = fields(value)
+            namespace = getattr(value, "__dict__", None)
+            return total + (size(namespace) if namespace is not None else
+                            sum(size(getattr(value, field.name)) for field in names))
         return total
+    return sum(size(value) for value in values)
+
+
+def metadata_size(*values) -> int:
+    """Account a proof graph and the fixed SQLite/cursor working reserve."""
     # Five bounded SQLite caches (gate, Raw, evidence, ledger, fresh Raw check)
     # plus 128KiB cursor/planner overhead. Chroma's index is separate.
-    return 768 * 1024 + sum(size(value) for value in values)
+    return 768 * 1024 + _metadata_bytes(*values)
 
 
 class PageCursor:
@@ -321,7 +330,9 @@ class QualifiedPageOwner:
             raise ValueError("page ledger item shape exceeded")
         ledger = self._ledger_page(ids, rows)
         wanted = {row["memory_id"]: row for row in rows}
-        measured = metadata_size(rows, ids, ledger, wanted, result)
+        fixed_bytes = metadata_size(rows, ids, ledger, wanted, marks)
+        retained_bytes = 0
+        measured = fixed_bytes + sys.getsizeof(result)
         self.metadata_peak = max(self.metadata_peak, measured)
         if measured > METADATA_WORKING_BYTES:
             raise ValueError("page proof working set exceeded")
@@ -342,15 +353,27 @@ class QualifiedPageOwner:
             body = text.encode("utf-8")
             if len(text) > 8192 or len(body) > 32768:
                 raise ValueError("page text exceeds source contract")
-            result.append({"memory_id": key, "payload_hash": record["payload_hash"],
-                           "text_hash": hashlib.sha256(body).hexdigest(), "text_bytes": len(body)})
-            measured = metadata_size(rows, ids, ledger, wanted, result, stored, record, body)
+            proof = {"memory_id": key, "payload_hash": record["payload_hash"],
+                     "text_hash": hashlib.sha256(body).hexdigest(), "text_bytes": len(body)}
+            result.append(proof)
+            # Each retained entry is counted once when appended. Sharing with
+            # the fixed graph or another entry may be counted twice, never less.
+            retained_bytes += _metadata_bytes(proof)
+            measured = (fixed_bytes + sys.getsizeof(result) + retained_bytes
+                        + _metadata_bytes(stored, record, body))
             self.metadata_peak = max(self.metadata_peak, measured)
             if measured > METADATA_WORKING_BYTES:
                 raise ValueError("page proof working set exceeded")
+            del stored, record, body, text, proof
         if tuple(row["memory_id"] for row in result) != ids:
             raise ValueError("page evidence missing")
-        if len(canonical(result).encode("utf-8")) * 8 > METADATA_WORKING_BYTES:
+        encoded_text = canonical(result)
+        encoded_body = encoded_text.encode("utf-8")
+        measured = (fixed_bytes + sys.getsizeof(result) + retained_bytes
+                    + _metadata_bytes(encoded_text, encoded_body))
+        self.metadata_peak = max(self.metadata_peak, measured)
+        if (measured > METADATA_WORKING_BYTES
+                or len(encoded_body) * 8 > METADATA_WORKING_BYTES):
             raise ValueError("page metadata working set exceeded")
         return result
 
@@ -360,8 +383,11 @@ class QualifiedPageOwner:
         marks = ",".join("?" for _ in ids)
         items: set[str] = set()
         sources: dict[str, tuple[SourceRevision, ...]] = {}
+        fixed_bytes = metadata_size(raw_rows, ids, marks)
+        retained_bytes = 0
         def measure(*transient):
-            measured = metadata_size(raw_rows, ids, items, sources, *transient)
+            measured = (fixed_bytes + sys.getsizeof(items) + sys.getsizeof(sources)
+                        + retained_bytes + _metadata_bytes(*transient))
             self.metadata_peak = max(self.metadata_peak, measured)
             if measured > METADATA_WORKING_BYTES:
                 raise ValueError("page ledger proof working set exceeded")
@@ -375,8 +401,11 @@ class QualifiedPageOwner:
             if item.memory_id != key or item.store != store or item.store_ref != store_ref:
                 raise ValueError("ledger item column conflict")
             if item.status == "active" or store == "rule" and item.status == "candidate":
+                if key not in items:
+                    retained_bytes += _metadata_bytes(key)
                 items.add(key)
-            del stored, decoded, item, encoded
+                measure(stored, decoded, item)
+            del stored, decoded, item, encoded, key, store, store_ref
         for stored in self.ledger_db.execute(
                 "SELECT memory_id,raw_message_id,revision,source_json FROM memory_sources WHERE memory_id IN ("
                 + marks + ")", ids):
@@ -386,12 +415,19 @@ class QualifiedPageOwner:
             source = SourceRevision(**decoded)
             if source.raw_message_id != raw_id or source.revision != revision or key in sources:
                 raise ValueError("ledger source column conflict")
-            sources[key] = (source,)
+            entry = (source,)
+            sources[key] = entry
+            retained_bytes += _metadata_bytes(key, entry)
             measure(stored, decoded, source)
-            del stored, decoded, source, encoded
+            del stored, decoded, source, encoded, entry, key, raw_id, revision
         result = {key: {"has_item": key in items, "sources": sources.get(key, ())}
                   for key in ids if key in items or key in sources}
-        measure(result)
+        # Only this final transition traverses the completed page graph. Do not
+        # repeat it for every source or retain transient encoded SQL rows.
+        measured = metadata_size(raw_rows, ids, marks, items, sources, result)
+        self.metadata_peak = max(self.metadata_peak, measured)
+        if measured > METADATA_WORKING_BYTES:
+            raise ValueError("page ledger proof working set exceeded")
         return result
 
     async def next_page(self):

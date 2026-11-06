@@ -30,3 +30,24 @@ Modified-file Ruff and whitespace checks passed. Mypy of24 changed/new runtime m
 The three skipped cases require real models. The later600-second real-model window was not opened because offline performance failed. No new SDK/model calls, formal database changes, deployment, platform resume or email was performed for this validation.
 
 Private artifact digests: result `84178cf79c5d1c5332c642d8ec329e03828d53fc389e6bae9c0c582ba96fc063`; JUnit `f21cf857483c6015c339b6de902c8aca38fb62a5d43fe754d1ea46f1c916f85d`. Operational controls and raw logs are excluded from the public source package.
+
+## Concentrated correction and affected verification
+
+The11 non-growth failures were corrected and verified separately:11 passed in33.32 seconds. This includes starting and settling the integrated fixture correctly, updating obsolete assertions without weakening the approved contracts, and asserting that legacy unknown model usage stays blocked. Their initial failures remain above.
+
+Three runtime files were then corrected within the approved design. Page accounting measures the fixed proof once and conservatively accumulates retained/transient costs. Cold recovery reuses identity validation only within its protected recovery session and invalidates it on fingerprint changes; target queue checks use the equivalent unapplied sequence range. Receipts are fetched in bounded batches with exact member/content/metadata/numeric validation. The cached path also rejects authority auxiliary files and reparse/dangling entries.
+
+Final affected run: **50 passed,4 failed**,54 tests,328.10 seconds (supervisor330.719 seconds). It included the growth cases, integrated cancellation/replay/restart, actual source changes and reader-process failure, memory accounting boundaries, cold batch checks,16-user real workers, and inherited capacity regression. No forced stop; all frozen inputs unchanged and observed children retired. Peak sampled RSS1,606,586,368 bytes, total sampled new data including retained prior runs1,471,845,370 bytes. Final three modified modules pass Mypy; the earlier33 inherited findings elsewhere remain.
+
+| Vectors | Final cold publication | Final first interactive search |
+| --- | --- | --- |
+|1000|2.625 seconds|0.875 seconds, correct ordered IDs; score comparison differs by about1.56e-11, exceeding the unchanged1e-12 tolerance|
+|5002|6.562 seconds|Original2-second deadline exceeded in ledger validation|
+|12000|14.015 seconds|Original2-second deadline exceeded in evidence validation|
+|40000|53.218 seconds, now current|Original2-second deadline exceeded in ledger validation|
+
+The1000-case reference stores vectors before Chroma writes, while the actual path scores vectors returned by persistent Chroma. That is a reference-data mismatch to investigate, not authorization to loosen tolerance or change the scoring algorithm. The synthetic query uses exact binary fractions, so simply casting it to float32 cannot explain or fix this difference.
+
+**Final status remains performance NoGo.** Cold recovery improved and all other affected checks passed, but complete large-corpus queries still do not meet the original deadline. No more full matrix or growth retry was launched to chase a passing result. The real-model window, deployment and official Full remain unperformed.
+
+Final private artifact digests: result `660a9287fa4c2b6ca2b988b3c6bf11d5b070b62f6ed332279961a14cb2ca435c`; JUnit `79a4703a23f2ad6dc3d1ea1a64dc6e81e2ae201957d5c89b13c09fe533159f8d`.

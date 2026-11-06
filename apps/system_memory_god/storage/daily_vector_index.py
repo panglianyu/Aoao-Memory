@@ -83,7 +83,7 @@ def _file_fingerprint(path: Path) -> tuple[int, int, int, int]:
 
 
 def _validate_chroma_readonly(path: Path, scope: PipelineScope,
-                              target_ids: tuple[str, ...] = ()) -> None:
+                              target_ids: tuple[str, ...] = ()) -> str:
     database = path / "chroma.sqlite3"
     if any((path / ("chroma.sqlite3" + suffix)).exists()
            for suffix in ("-journal", "-wal", "-shm")):
@@ -161,29 +161,112 @@ def _validate_chroma_readonly(path: Path, scope: PipelineScope,
         if not directories <= {vector_id}:
             raise ValueError("unknown vector segment directory")
         metadata_id = next(row[0] for row in segments if row[2] == "METADATA")
-        applied = connection.execute(
-            "SELECT seq_id FROM max_seq_id WHERE segment_id=?",
-            (metadata_id,),
-        ).fetchone()
-        applied_sequence = (int.from_bytes(applied[0], "big")
-                            if applied is not None else 0)
-        for start in range(0, len(target_ids), 100):
-            batch = target_ids[start:start + 100]
-            placeholders = ",".join("?" for _ in batch)
-            queued = connection.execute(
-                f"SELECT MAX(seq_id) FROM embeddings_queue WHERE id IN ({placeholders})",
-                batch,
-            ).fetchone()[0]
-            if queued is not None and queued > applied_sequence:
-                raise RuntimeError("target vector queue has unapplied records")
+        _check_target_queue(connection, metadata_id, target_ids)
         if (_file_fingerprint(database) != before or any(
                 (path / ("chroma.sqlite3" + suffix)).exists()
                 for suffix in ("-journal", "-wal", "-shm"))):
             raise ValueError("vector storage changed during inventory")
+        return metadata_id
     except (sqlite3.Error, OSError):
         raise ValueError("vector storage unavailable") from None
     finally:
         if connection is not None:
+            connection.close()
+
+
+def _check_target_queue(connection, metadata_id: str, target_ids: tuple[str, ...]) -> None:
+    applied = connection.execute("SELECT seq_id FROM max_seq_id WHERE segment_id=?",
+                                 (metadata_id,)).fetchone()
+    applied_sequence = int.from_bytes(applied[0], "big") if applied is not None else 0
+    if applied_sequence >= 2**63 - 1:
+        # SQLite INTEGER PRIMARY KEY cannot contain a larger queued sequence.
+        return
+    for start in range(0, len(target_ids), 100):
+        batch = target_ids[start:start + 100]
+        marks = ",".join("?" for _ in batch)
+        # seq_id is the existing primary key. Checking only its unapplied suffix
+        # is equivalent to MAX(target seq_id)>watermark without rescanning old rows.
+        pending = connection.execute(
+            "SELECT 1 FROM embeddings_queue WHERE seq_id>? AND id IN (" + marks + ") LIMIT 1",
+            (applied_sequence, *batch)).fetchone()
+        if pending is not None:
+            raise RuntimeError("target vector queue has unapplied records")
+
+
+def _receipt_dimension(path: Path) -> int:
+    """Read the scalar allocation bound before fetching any embedding batch."""
+    _check_tree(path)
+    database = path / "chroma.sqlite3"
+    before = _file_fingerprint(database)
+    if any((path / ("chroma.sqlite3" + suffix)).exists() for suffix in ("-journal", "-wal", "-shm")):
+        raise ValueError("vector receipt storage unavailable")
+    connection = sqlite3.connect(database.as_uri() + "?mode=ro&immutable=1", uri=True, timeout=5)
+    try:
+        dimensions = connection.execute("SELECT dimension FROM collections WHERE name='daily_evidence'").fetchall()
+        if (len(dimensions) != 1 or type(dimensions[0][0]) is not int
+                or not 1 <= dimensions[0][0] <= 65536 or _file_fingerprint(database) != before
+                or any((path / ("chroma.sqlite3" + suffix)).exists()
+                       for suffix in ("-journal", "-wal", "-shm"))):
+            raise ValueError("vector receipt dimension unavailable")
+        return dimensions[0][0]
+    finally:
+        connection.close()
+
+
+class VectorRecoveryAudit:
+    """A local audit cache owned by one recovery under its scope derivation gate.
+
+    No connection/cursor is retained between calls or passed between threads.
+    A storage fingerprint change triggers a complete new schema/identity check.
+    """
+
+    def __init__(self, stores: ScopedStores, scope: PipelineScope):
+        self.stores, self.scope = stores, scope
+        self._fingerprints: tuple | None = None
+        self._metadata_id: str | None = None
+
+    def _current(self):
+        partition = self.stores.partition(self.scope)
+        path = partition / "vectors"
+        _check_tree(path)
+        authority = partition / "vector_index.db"
+        authority_info = authority.lstat()
+        if (not stat.S_ISREG(authority_info.st_mode) or authority_info.st_nlink != 1
+                or authority.is_symlink()
+                or getattr(authority_info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT):
+            raise ValueError("vector authority storage unavailable")
+        for suffix in ("-journal", "-wal", "-shm"):
+            if (path / ("chroma.sqlite3" + suffix)).exists():
+                raise ValueError("vector index has unrecognized sidefiles")
+            try:
+                authority.with_name(authority.name + suffix).lstat()
+            except FileNotFoundError:
+                pass
+            else:
+                raise ValueError("vector authority has unrecognized sidefiles")
+        return path, (_file_fingerprint(path / "chroma.sqlite3"),
+                      (authority_info.st_dev, authority_info.st_ino,
+                       authority_info.st_size, authority_info.st_mtime_ns))
+
+    def validate(self, target_ids: tuple[str, ...]) -> None:
+        for key in target_ids:
+            identity(key)
+        path, before = self._current()
+        if before != self._fingerprints:
+            self._metadata_id = DailyVectorIndex._validate_existing_inventory(self.stores, self.scope, target_ids)
+            if self._current()[1] != before:
+                raise ValueError("vector storage changed during recovery audit")
+            self._fingerprints = before
+            return
+        connection = sqlite3.connect((path / "chroma.sqlite3").as_uri() + "?mode=ro&immutable=1",
+                                     uri=True, timeout=5)
+        try:
+            if self._metadata_id is None:
+                raise ValueError("vector recovery inventory unavailable")
+            _check_target_queue(connection, self._metadata_id, target_ids)
+            if self._current()[1] != before:
+                raise ValueError("vector storage changed during recovery audit")
+        finally:
             connection.close()
 
 
@@ -199,6 +282,11 @@ class DailyVectorIndex:
     @staticmethod
     def validate_existing(stores: ScopedStores, scope: PipelineScope,
                           target_ids: tuple[str, ...] = ()) -> None:
+        DailyVectorIndex._validate_existing_inventory(stores, scope, target_ids)
+
+    @staticmethod
+    def _validate_existing_inventory(stores: ScopedStores, scope: PipelineScope,
+                                     target_ids: tuple[str, ...] = ()) -> str:
         for key in target_ids:
             identity(key)
         partition = stores.partition(scope)
@@ -214,9 +302,10 @@ class DailyVectorIndex:
         authority = PipelineDatabase(stores.root, scope, "vector_index.db", _INDEX_DDL,
                                      0x414C5649)
         authority.validate_existing(check_identity)
-        _validate_chroma_readonly(path, scope, target_ids)
+        metadata_id = _validate_chroma_readonly(path, scope, target_ids)
         _check_tree(path)
         authority.validate_existing(check_identity)
+        return metadata_id
 
     def _collection(self, scope: PipelineScope):
         partition = self.stores.partition(scope)
@@ -319,30 +408,58 @@ class DailyVectorIndex:
         def read():
             with self._lock:
                 collection = self._collection(scope)
+                dimension = _receipt_dimension(self.stores.partition(scope) / "vectors")
                 receipts = []
-                for record in records:
-                    key, text = record["memory_id"], record["payload"]["text"]
-                    checked = collection.get(ids=[key], include=["documents", "metadatas", "embeddings"])
+                keys = [record["memory_id"] for record in records]
+                if len(set(keys)) != len(keys):
+                    raise RuntimeError("vector receipt duplicate input")
+                for key in keys:
+                    identity(key)
+                start = 0
+                while start < len(records):
+                    end, text_bytes = start, 0
+                    while end < len(records):
+                        text = records[end]["payload"]["text"]
+                        if type(text) is not str or len(text) > 8192:
+                            raise RuntimeError("vector receipt source too large")
+                        cost = len(text.encode("utf-8")) * 8 + 2048
+                        if end > start and (text_bytes + cost > 512 * 1024
+                                            or (end - start + 1) * dimension * 64 > 40 * 1024**2):
+                            break
+                        text_bytes += cost
+                        end += 1
+                    group = records[start:end]
+                    ids = keys[start:end]
+                    checked = collection.get(ids=ids, include=["documents", "metadatas", "embeddings"])
                     embeddings = checked["embeddings"]
-                    if (checked["ids"] != [key] or checked["documents"] != [text]
-                            or checked["metadatas"] != [{"payload_hash": record["payload_hash"]}]
-                            or embeddings is None or len(embeddings) != 1
-                            or len(embeddings[0]) == 0
-                            or not all(math.isfinite(float(value)) for value in embeddings[0])):
+                    found = checked["ids"]
+                    if (len(found) != len(ids) or len(set(found)) != len(found) or set(found) != set(ids)
+                            or embeddings is None or len(embeddings) != len(ids)
+                            or len(checked["documents"]) != len(ids) or len(checked["metadatas"]) != len(ids)):
                         raise RuntimeError("vector receipt unavailable")
-                    receipt = {"memory_id": key,
-                                     "payload_hash": record["payload_hash"],
-                                     "text_hash": hashlib.sha256(text.encode("utf-8")).hexdigest(),
-                                     "embedding_dim": len(embeddings[0])}
-                    if snapshot:
-                        if not 1 <= len(embeddings[0]) <= 2048:
-                            receipt["snapshot"] = {"schema": 1, "unavailable": "vector_capacity_exceeded"}
-                        else:
-                            body = struct.pack("<" + "f" * len(embeddings[0]), *embeddings[0])
-                            receipt["snapshot"] = {"schema": 1,
-                                "f32": base64.b64encode(body).decode("ascii"),
-                                "sha256": hashlib.sha256(body).hexdigest()}
-                    receipts.append(receipt)
+                    positions = {key: index for index, key in enumerate(found)}
+                    for record in group:
+                        key, text = record["memory_id"], record["payload"]["text"]
+                        index = positions[key]
+                        vector = embeddings[index]
+                        if (checked["documents"][index] != text
+                                or checked["metadatas"][index] != {"payload_hash": record["payload_hash"]}
+                                or len(vector) != dimension or not all(math.isfinite(float(value)) for value in vector)):
+                            raise RuntimeError("vector receipt unavailable")
+                        receipt = {"memory_id": key, "payload_hash": record["payload_hash"],
+                                   "text_hash": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                                   "embedding_dim": len(vector)}
+                        if snapshot:
+                            if dimension > 2048:
+                                receipt["snapshot"] = {"schema": 1, "unavailable": "vector_capacity_exceeded"}
+                            else:
+                                body = struct.pack("<" + "f" * dimension, *vector)
+                                receipt["snapshot"] = {"schema": 1,
+                                    "f32": base64.b64encode(body).decode("ascii"),
+                                    "sha256": hashlib.sha256(body).hexdigest()}
+                        receipts.append(receipt)
+                    start = end
+                    del checked, embeddings, vector
                 return tuple(receipts)
         return await asyncio.to_thread(read)
 

@@ -3,7 +3,7 @@
   "entry_version": "ARU-RECOVERY-2",
   "role": "Pinned Python audit set for isolated ARU-RECOVERY-2 based on public 46fd94d; not a deployment or performance attestation",
   "source_count": 204,
-  "source_bytes": 3172726,
+  "source_bytes": 3181213,
   "source_files": [
     {
       "bytes": 24035,
@@ -71,9 +71,9 @@
       "sha256": "ae726f191d71af6281c1d8e71bfbeb686fec603864d9e97b15fd99887e5cdaad"
     },
     {
-      "bytes": 25340,
+      "bytes": 25605,
       "path": "apps/system_memory_god/derivation.py",
-      "sha256": "95962d132752fedbb7cce757166db0b085582b5e071b58259d3ce56ab8167745"
+      "sha256": "a0398a8101200de3d430cf92017a4f86e039656747115e649359c1e3c3692b2d"
     },
     {
       "bytes": 68652,
@@ -141,14 +141,14 @@
       "sha256": "ce16f6c11a4487e1c3797e4a60f2b82485a2a34c9e972fb0601748baa62fd31a"
     },
     {
-      "bytes": 30388,
+      "bytes": 36647,
       "path": "apps/system_memory_god/storage/daily_vector_index.py",
-      "sha256": "5bb8880ddba8599184f997359236b41d84e548a249959370f9023457d1fe9366"
+      "sha256": "b8e82c2febc810524c1ab92533bff22822fd00c8fac6f66b67e41c9ccaf1a118"
     },
     {
-      "bytes": 20014,
+      "bytes": 21977,
       "path": "apps/system_memory_god/storage/daily_vector_pages.py",
-      "sha256": "0415b87ea691c69c2975903c25014a34a6240244a07de7be16167891da3ddd24"
+      "sha256": "15f518b364c99571f20d5582cabedeac4197e09ed7047abea4447ecda23e4e46"
     },
     {
       "bytes": 11722,

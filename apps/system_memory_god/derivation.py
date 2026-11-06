@@ -226,6 +226,10 @@ class DailyDerivation:
                 ledger_ready = False
                 vector_records: list[dict] = []
                 vector_found = False
+                from .storage.daily_vector_index import VectorRecoveryAudit
+                # This proof cache exists only during this gate-owned recovery;
+                # it cannot authorize another partition or later recovery run.
+                vector_audit = VectorRecoveryAudit(self.stores, scope)
 
                 async def verify_vectors() -> None:
                     if not vector_records:
@@ -238,8 +242,7 @@ class DailyDerivation:
                         "text_hash": hashlib.sha256(
                             record["payload"]["text"].encode("utf-8")).hexdigest(),
                     } for record in vector_records)
-                    await asyncio.to_thread(
-                        self.stores.validate_vector_index, scope,
+                    await asyncio.to_thread(vector_audit.validate,
                         tuple(row["memory_id"] for row in expected))
                     received = await self.vector_index.receipts(scope, vector_records)
                     if (type(received) is not tuple or len(received) != len(expected)

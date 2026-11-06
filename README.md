@@ -8,7 +8,7 @@ ARU-RECOVERY-2 combines atomic deadline handoff, persistent shared extraction-ca
 
 This deliberately changes resource accounting: 40 MiB bounds each active query's controlled numerical working set and 2 MiB bounds its paged proof metadata; they no longer bound the whole corpus. Persistent storage and Chroma's resident index are separate. The 768 MiB total rebuildable cache limit, two lanes, one shared embedding process, queue limit32, 1700-second HTTP deadline and original two-second interactive query deadline remain. Full-corpus exact retrieval must meet that deadline; timeouts never authorize partial results.
 
-The candidate's complete related matrix and four growth sizes are being validated. It has not been deployed or accepted for the official Full task. Small synthetic checks do not prove Full throughput or completion. Historical SNAP-CAP-1 evidence is retained in [PATCH-SNAP-CAP-1.md](PATCH-SNAP-CAP-1.md).
+The related matrix and targeted corrections have completed, with remaining growth failures:5002–40000-vector exact queries still exceed the original two-second deadline.40000-vector cold publication now completes in53.218 seconds;1000-vector search returns in0.875 seconds but its strict score-reference comparison remains unresolved. **This candidate is not ready to deploy.** See [VALIDATION-ARU-RECOVERY-2.md](VALIDATION-ARU-RECOVERY-2.md) for actual results. Historical SNAP-CAP-1 evidence is retained in [PATCH-SNAP-CAP-1.md](PATCH-SNAP-CAP-1.md).
 
 The following 1.8.4 notes describe the inherited base and historical validation, not the deployment or acceptance status of this candidate.
 
