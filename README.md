@@ -1,8 +1,12 @@
 # aru memory
 
-A Windows Add/Search memory service. ARU-RECOVERY-2 is an isolated, undeployed integrated repair candidate based on SNAP-CAP-1 commit `46fd94d0df89f89a132ea6d8eb35e66c2b4684db`. It retains original messages and scoped vector, entity, graph, rule, journal and schedule evidence. Private configuration, credentials, runtime data, models, operational controls and host-assistant history are excluded.
+A Windows Add/Search memory service. ARU-THROUGHPUT-1 is an undeployed publication-wait optimization candidate based on ARU-RECOVERY-2 commit `53987cf97a35eddc9cab825647fbe626b5500997`. It retains original messages and scoped vector, entity, graph, rule, journal and schedule evidence. Private configuration, credentials, runtime data, models, operational controls and host-assistant history are excluded.
 
 ## Candidate status
+
+Publication waiting now uses per-scope change notifications with fresh authoritative checks and a bounded fallback. In one synthetic 5002-record comparison, unchanged-state queries fell from399 to30 and publication-barrier CPU from5.859 to0.422seconds. This does not establish faster official Full completion. The related matrix retains one timing-sensitive failure after a version-label correction; the inherited large-corpus Search limits remain. See [PATCH-ARU-THROUGHPUT-1.md](PATCH-ARU-THROUGHPUT-1.md) and [VALIDATION-ARU-THROUGHPUT-1.md](VALIDATION-ARU-THROUGHPUT-1.md). This candidate has not replaced the running service.
+
+### Inherited recovery status
 
 ARU-RECOVERY-2 combines atomic deadline handoff, persistent shared extraction-call accounting, the strict empty-entity policy, complete paged exact vector search, and readiness that retains terminal failure causes. The default challenge path uses the existing persistent Chroma vectors instead of repeatedly publishing a complete numerical snapshot. Legacy snapshot readers remain available for compatibility.
 
@@ -43,7 +47,7 @@ The documented request deadline is 1700 seconds, including body reading and queu
 Use 64-bit Windows, the Python launcher and Python 3.10. The reference interpreter was 3.10.11. Use a short checkout path.
 
 ~~~powershell
-git clone --branch codex/aru-recovery-2 https://github.com/panglianyu/Aoao-Memory.git
+git clone --branch codex/aru-throughput-1 https://github.com/panglianyu/Aoao-Memory.git
 cd Aoao-Memory
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup.ps1 -Dev
 ~~~

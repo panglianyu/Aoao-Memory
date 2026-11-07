@@ -82,14 +82,20 @@ class MemoryService:
 
     async def wait_until_published(self, scope: Scope, *, deadline: float) -> dict:
         self._authorize(scope)
+        if type(deadline) not in {int, float} or not math.isfinite(deadline):
+            raise ValueError("invalid publication deadline")
+        if scope.connector_id is None or scope.conversation_id is None:
+            raise ScopeError("complete memory scope required")
+        partition = PipelineScope(scope.user_id, scope.agent_id, scope.connector_id, scope.conversation_id)
         while True:
+            revision = self.runtime.publication_revision(partition)
             state = await self.status(scope, deadline=deadline)
             if state["status"] in {"current", "disabled", "stopped"} or state["terminal"]:
                 return state
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 return {**state, "status": "unavailable", "reason": "publication_deadline"}
-            await asyncio.sleep(min(.05, remaining))
+            await self.runtime.wait_publication_change(partition, revision, deadline=deadline)
 
     async def edit(self, scope: Scope, message_id: str, content: str, *,
                    expected_revision: int, edited_at: str):

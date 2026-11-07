@@ -26,7 +26,8 @@ class RawMessageWorker:
                  on_settled: Callable[[PipelineScope, str], None] | None = None,
                  selected_claims: Mapping[str, int] | None = None,
                  selected_sources: Mapping[str, Mapping[str, object]] | None = None,
-                 on_failure: Callable[[], None] | None = None):
+                 on_failure: Callable[[], None] | None = None,
+                 on_state_change: Callable[[PipelineScope, str], None] | None = None):
         for value, lower, upper in ((lease_seconds, 3, 3600), (max_attempts, 1, 10),
                                     (concurrency, 1, 16), (task_timeout, 1, 3600),
                                     (max_input_chars, 1, 128000)):
@@ -44,7 +45,10 @@ class RawMessageWorker:
             raise ValueError("invalid settlement notification")
         if on_failure is not None and not callable(on_failure):
             raise ValueError("invalid failure notification")
+        if on_state_change is not None and not callable(on_state_change):
+            raise ValueError("invalid state notification")
         self.on_failure = on_failure
+        self.on_state_change = on_state_change
         if selected_claims is not None:
             if not selected_claims or len(selected_claims) > 18:
                 raise ValueError("invalid selected recovery claims")
@@ -75,6 +79,14 @@ class RawMessageWorker:
         self._next_scope = 0
         self.on_settled = on_settled
         self.notification_error = ""
+
+    def _notify_state_change(self, partition: PipelineScope, task_id: str) -> None:
+        if self.on_state_change is not None:
+            try:
+                self.on_state_change(partition, task_id)
+            except Exception:
+                # Observation cannot change the result of a committed failure.
+                self.notification_error = "state_notification_failed"
 
     async def allow_recovered_scope(self, scope: Scope) -> None:
         """Unblock only after runtime recovery, serialized with lease admission."""
@@ -194,6 +206,7 @@ class RawMessageWorker:
             if (task["attempts"] > attempt_limit
                     or self.selected_claims is not None and task["attempts"] != attempt_limit):
                 await self._raw_io(self.store.fail, *args, "processor_error")
+                self._notify_state_change(partition, task["task_id"])
                 return 0
             job = asyncio.create_task(execute())
             renewal = asyncio.create_task(renew_loop())
@@ -231,6 +244,7 @@ class RawMessageWorker:
                     await self._raw_io(self.store.fail, *args, self.last_error,
                         retry_after=min(300, 2 ** task["attempts"])
                         if task["attempts"] < attempt_limit else None)
+                    self._notify_state_change(partition, task["task_id"])
                 except ConflictError:
                     pass
             return 0

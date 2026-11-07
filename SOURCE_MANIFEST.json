@@ -1,9 +1,9 @@
 {
   "project": "aru memory",
-  "entry_version": "ARU-RECOVERY-2",
-  "role": "Pinned Python audit set for isolated ARU-RECOVERY-2 based on public 46fd94d; not a deployment or performance attestation",
+  "entry_version": "ARU-THROUGHPUT-1",
+  "role": "Pinned Python audit set for publication-wait optimization based on 53987cf; not deployment or Full-performance attestation",
   "source_count": 204,
-  "source_bytes": 3181213,
+  "source_bytes": 3185828,
   "source_files": [
     {
       "bytes": 24035,
@@ -11,9 +11,9 @@
       "sha256": "c4d9218a62b54234a5be2b479c59a127e9d610f6be20f468c40b0ab579703263"
     },
     {
-      "bytes": 11208,
+      "bytes": 11210,
       "path": "apps/system_memory_god/challenge_api.py",
-      "sha256": "bd236e973d6ec04d125e3a4b566435bdf4450f1882e5a7420f7974aaa44e328a"
+      "sha256": "d7344cef06bf8fd2115e3c65245c527d2cdb3a64f0f41090f38edf38d1415f92"
     },
     {
       "bytes": 18389,
@@ -31,9 +31,9 @@
       "sha256": "6ca2d366e443fc6ad35a089d11fc6b15df3b3b68dc0ac873b7e650e5116a270f"
     },
     {
-      "bytes": 32020,
+      "bytes": 32022,
       "path": "apps/system_memory_god/challenge_runtime.py",
-      "sha256": "9a1b82207018231ad200c6def10e567091b35bc3b5d001991ba6f9599d40871d"
+      "sha256": "3bcd2c8f0f704cdea35d204365644574df89048b1b02f7634984a5278a462577"
     },
     {
       "bytes": 8024,
@@ -66,9 +66,9 @@
       "sha256": "3c19e62fbc72207c917889de75a534dd8fce3bd9d6bfbaf10c33edf2be8c1a23"
     },
     {
-      "bytes": 38513,
+      "bytes": 41817,
       "path": "apps/system_memory_god/daily_runtime.py",
-      "sha256": "ae726f191d71af6281c1d8e71bfbeb686fec603864d9e97b15fd99887e5cdaad"
+      "sha256": "91f352a0d04045ca70d58b996b21549efa66bdde493a8569ff549534861f23a8"
     },
     {
       "bytes": 25605,
@@ -106,9 +106,9 @@
       "sha256": "2b4084a279ea784db1ce5af131c7b448509d2d7ef1cdae33049ecf983218457e"
     },
     {
-      "bytes": 7216,
+      "bytes": 7714,
       "path": "apps/system_memory_god/memory_service.py",
-      "sha256": "15fea8f903b8231ba67810936dc673741ca0219063e5fff2dfcd190408c77b4f"
+      "sha256": "1a9132e1438908bc50c88e1ef80462061f93cb5d723e436dc1953210cd68b9c0"
     },
     {
       "bytes": 4496,
@@ -591,9 +591,9 @@
       "sha256": "a95c8b130f8b318353e5449f37c75e96dac8bcc855a86f6b2c339e0b18d3918b"
     },
     {
-      "bytes": 17154,
+      "bytes": 17961,
       "path": "kernel/raw_message_worker.py",
-      "sha256": "c231c6c6fe2e129522018a6e430d8891cc56b5b703630d88a488b8908535ab5a"
+      "sha256": "5097505999955bc75b5d48fcbb2413ba10fd7b80e74bb512de823cbd9d0ac1ad"
     },
     {
       "bytes": 3604,
@@ -1016,9 +1016,9 @@
       "sha256": "3f406b74d15c7868d4c38d18d80a7a743770b238207ef82b64ee3f056c03c009"
     },
     {
-      "bytes": 14828,
+      "bytes": 14830,
       "path": "Tools/serve_memory_challenge.py",
-      "sha256": "000ea43053aaf162bd1d548805308c62b2eb4eac8c412ad561ed7ea8d306726c"
+      "sha256": "0196f4c03ba58c7789ddc9e88b0285d4cf17bf24c6d91a1f9e19e94c3b642372"
     },
     {
       "bytes": 15023,

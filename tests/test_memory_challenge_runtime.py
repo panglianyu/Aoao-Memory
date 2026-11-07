@@ -345,7 +345,7 @@ async def test_identical_retry_and_restart_reuse_stable_message_and_timestamp(tm
         rows = await factory.services[-1].raw.replay(
             factory.services[-1].scopes[0], factory.services[-1].scopes[0].conversation_id)
         assert rows == [first]
-        assert reopened.health() == {"state": "ready", "version": "ARU-RECOVERY-2"}
+        assert reopened.health() == {"state": "ready", "version": "ARU-THROUGHPUT-1"}
     finally:
         await reopened.close()
 

@@ -99,7 +99,7 @@ def test_add_search_health_and_shutdown_follow_public_contract():
         assert response.json() == {"data": [{"id": "original-1", "content": "Ada lives in Oslo."}]}
         assert runtime.calls[-1] == ("search", {"user_id": "user-1", "query": query,
                                                "top_k": 100, "options": ["A", "B"]})
-        assert client.get("/health").json() == {"state": "ready", "version": "ARU-RECOVERY-2"}
+        assert client.get("/health").json() == {"state": "ready", "version": "ARU-THROUGHPUT-1"}
         assert client.get("/docs").status_code == 404
     assert runtime.closed
 

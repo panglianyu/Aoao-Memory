@@ -27,7 +27,7 @@ from .storage.shared_embedding_owner import DeadlineHandoffNotCommitted
 if TYPE_CHECKING:
     from .storage.shared_embedding_owner import SharedEmbeddingGeneration, SharedEmbeddingOwner
 
-VERSION = "ARU-RECOVERY-2"
+VERSION = "ARU-THROUGHPUT-1"
 MAX_MESSAGES = 256
 MAX_MESSAGE_CHARS = 81920
 CLEANUP_TIMEOUT = 60.0

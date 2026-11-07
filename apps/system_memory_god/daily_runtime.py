@@ -117,6 +117,56 @@ class DailyMemoryRuntime:
         self._semantic_publications: dict[PipelineScope, tuple[int, str, int]] = {}
         self._semantic_metadata: set[asyncio.Task] = set()
         self._lease_waiting: set[PipelineScope] = set()
+        self._publication_changes: dict[PipelineScope, tuple[int, asyncio.Event]] = {
+            partition: (0, asyncio.Event()) for partition in self._startup_partitions}
+
+    def publication_revision(self, partition: PipelineScope) -> int:
+        """Capture a loop-owned notification revision before the full Raw proof."""
+        if partition not in self._startup_partitions:
+            raise ValueError("unknown semantic scope")
+        entry = self._publication_changes.get(partition)
+        return entry[0] if entry is not None else 0
+
+    def signal_publication_change(self, partition: PipelineScope, task_id: str) -> None:
+        """Prompt fresh reads without changing publication or retry authority.
+
+        Callers run on the owning loop; the cache's thread callback already uses
+        call_soon_threadsafe. Replacing the event broadcasts to every old waiter.
+        """
+        if partition not in self._startup_partitions:
+            raise ValueError("unknown semantic scope")
+        entry = self._publication_changes.get(partition)
+        if entry is not None:
+            revision, event = entry
+            self._publication_changes[partition] = (revision + 1, asyncio.Event())
+            event.set()
+
+    def _signal_all_publications(self) -> None:
+        for partition in self._startup_partitions:
+            self.signal_publication_change(partition, "lifecycle")
+
+    async def wait_publication_change(self, partition: PipelineScope, revision: int, *,
+                                      deadline: float) -> None:
+        if partition not in self._startup_partitions:
+            raise ValueError("unknown semantic scope")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return
+        entry = self._publication_changes.get(partition)
+        if entry is None:
+            # Closed runtimes retain no events. Failed cleanup still respects
+            # the original deadline and cannot turn into a busy status loop.
+            await asyncio.sleep(min(1.0, remaining))
+            return
+        current, event = entry
+        if current != revision:
+            return
+        # No await separates the revision check and taking this event. A signal
+        # before wait_for schedules event.wait leaves this old event set.
+        try:
+            await asyncio.wait_for(event.wait(), timeout=min(1.0, remaining))
+        except asyncio.TimeoutError:
+            pass
 
     def set_embedding_deadline(self, deadline_ns: int) -> None:
         """Forward the already registered operation deadline without starting IO."""
@@ -330,6 +380,8 @@ class DailyMemoryRuntime:
                     self._semantic_task.add_done_callback(self._semantic_finished)
                 self.raw.start_worker(self.bus, blocked_scopes=frozenset(scopes),
                     on_settled=self._notify_semantic if self.snapshot_cache is not None else None)
+                if self.raw.worker is not None:
+                    self.raw.worker.on_state_change = self.signal_publication_change
                 self._state, self._reasons = "degraded", ("derived_recovering",)
                 for scope in scopes:
                     task = asyncio.create_task(self._recover_scope(scope))
@@ -339,6 +391,7 @@ class DailyMemoryRuntime:
             except BaseException as exc:
                 self._startup_note(self._startup_state["stage"], code="startup_failed", error=exc)
                 self._state, self._reasons = "unavailable", ("startup_incomplete",)
+                self._signal_all_publications()
                 await self._close_parts()
                 raise
 
@@ -396,6 +449,7 @@ class DailyMemoryRuntime:
                 self._state = "degraded" if self._pending_scopes or self._blocked_scopes else "ready"
                 self._reasons = (("derived_recovering",) if self._pending_scopes else
                                  ("derived_recovery_incomplete",) if self._blocked_scopes else ())
+            self.signal_publication_change(partition, "recovery")
 
     def _lease_released(self, partition: PipelineScope) -> None:
         if partition in self._lease_waiting:
@@ -405,6 +459,7 @@ class DailyMemoryRuntime:
     def _notify_semantic(self, partition: PipelineScope, task_id: str) -> None:
         if self.snapshot_cache is None or partition not in self.snapshot_cache.scopes:
             raise ValueError("unknown semantic scope")
+        self.signal_publication_change(partition, task_id)
         if self._state in {"stopping", "stopped", "unavailable"}:
             return
         if self._semantic_attempts.get(partition, 0) >= 3:
@@ -424,6 +479,7 @@ class DailyMemoryRuntime:
             self._semantic_error = "semantic_publisher_failed"
             if self.snapshot_cache is not None:
                 self._semantic_failed.update(self.snapshot_cache.scopes)
+        self._signal_all_publications()
 
     def _verified_snapshot_rows(self, partition: PipelineScope) -> dict[str, bytes]:
         """Approve already captured receipts against existing current sources."""
@@ -481,6 +537,7 @@ class DailyMemoryRuntime:
                 self._semantic_dirty.difference_update(batch)
                 for partition in batch:
                     if self._semantic_attempts.get(partition, 0) >= 3:
+                        self.signal_publication_change(partition, "attempts_exhausted")
                         continue
                     self._semantic_ready.discard(partition)
                     self._startup_note("snapshot_capture", partition)
@@ -570,8 +627,11 @@ class DailyMemoryRuntime:
                         attempts = self._semantic_attempts.get(partition, 0) + 1
                         self._semantic_attempts[partition] = attempts
                         if attempts < 3:
+                            self.signal_publication_change(partition, "publication_failed")
                             await asyncio.sleep((1, 2)[attempts - 1])
                             self._semantic_dirty.add(partition)
+                    finally:
+                        self.signal_publication_change(partition, "publisher")
 
     async def _close_parts(self) -> None:
         self._semantic_publications.clear()
@@ -621,6 +681,7 @@ class DailyMemoryRuntime:
             if self._state == "stopped":
                 return
             self._state = "stopping"
+            self._signal_all_publications()
             self.retrieval.stop_accepting()
             try:
                 cleanup = asyncio.create_task(self._close_parts())
@@ -637,5 +698,8 @@ class DailyMemoryRuntime:
                 self._state = "unavailable"
                 self._reasons = ("shutdown_incomplete",)
                 raise
+            finally:
+                self._signal_all_publications()
+                self._publication_changes.clear()
             self._state = "stopped"
             self._reasons = ()
